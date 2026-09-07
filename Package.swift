@@ -34,7 +34,7 @@ let package = Package(
         // collides across modules.
         .target(name: "Shot", dependencies: ["BenchCore"], exclude: ["ATTRIBUTION.md"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
         .target(name: "Klip", dependencies: ["BenchCore"], exclude: ["ATTRIBUTION.md"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
-        .target(name: "Lingo", dependencies: ["BenchCore", "SelectedTextKit"], resources: [.process("Resources")], swiftSettings: swift5),
+        .target(name: "Lingo", dependencies: ["BenchCore", "SelectedTextKit"], exclude: ["ATTRIBUTION.md"], resources: [.process("Resources")], swiftSettings: swift5),
         .target(name: "Snap", dependencies: ["BenchCore"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
         // Piko ships the mediaremote-adapter perl script and framework as
         // verbatim resources, hence `.copy`; reach them through
