@@ -6,7 +6,12 @@ import BenchTestKit
 // MainActor block below, so tests may touch @MainActor types freely.
 exit(MainActor.assumeIsolated {
     let suites: [TestSuite] = [
-        ("SmokeTests", [("feature id", { try expectEqual(PikoFeature().id, "piko") })]),
+        ("NotchGeometryTests", NotchGeometryTests.tests),
+        ("MediaRemoteStreamParserTests", MediaRemoteStreamParserTests.tests),
+        ("ModelsTests", ModelsTests.tests),
+        ("SettingsTests", SettingsTests.tests),
+        ("BundledResourceTests", BundledResourceTests.tests),
+        ("FeatureTests", FeatureTests.tests),
     ]
     return runSuites(suites)
 })
