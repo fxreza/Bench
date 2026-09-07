@@ -42,6 +42,7 @@ let package = Package(
         .target(
             name: "Piko",
             dependencies: ["BenchCore"],
+            exclude: ["ATTRIBUTION.md"],
             resources: [.copy("Resources")],
             swiftSettings: swift5,
             linkerSettings: [
