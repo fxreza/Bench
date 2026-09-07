@@ -14,7 +14,8 @@ if [[ ${#MODULES[@]} -eq 0 ]]; then
 fi
 
 TARGETS=()
-for m in "${MODULES[@]}"; do TARGETS+=(--target "${m}Tests"); done
+# --product (not --target) so the runner executable is relinked after an edit.
+for m in "${MODULES[@]}"; do TARGETS+=(--product "${m}Tests"); done
 
 swift build --scratch-path "$SCRATCH" "${TARGETS[@]}" 2>&1 | grep -E "error:|warning: unused|Build complete|Compiling" | grep -v "^\[" || true
 
