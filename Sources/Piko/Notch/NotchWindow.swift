@@ -46,8 +46,8 @@ final class NotchWindow: NSPanel {
         // window server routes every click inside it to us (a nil hitTest only
         // drops the event, it does not forward it to the status items below).
         // So the panel ignores mouse events by default and the controller's
-        // pointer monitor switches them on only while the pointer is over the
-        // drawn shape (see NotchWindowController.updateMousePassThrough).
+        // pointer timer switches them on only while the pointer is over the
+        // drawn shape (see NotchWindowController.startPointerTracking).
         ignoresMouseEvents = true
         acceptsMouseMovedEvents = true
         level = Self.level
@@ -94,10 +94,15 @@ final class NotchWindowController {
     private var hostingView: NotchHostingView?
     private var screenObserver: NSObjectProtocol?
     private let notchSpace = NotchSpace()
-    private var globalPointerMonitor: Any?
-    private var localPointerMonitor: Any?
+    private var pointerTimer: Timer?
     private var stateObserver: AnyCancellable?
     private var lastPointerInsideShape = false
+
+    /// How often the pointer position is sampled to decide whether the panel
+    /// should accept clicks (see `startPointerTracking`). 60 Hz reads as
+    /// instant to a user reaching for the notch, and the check is a couple of
+    /// rect comparisons, so the idle cost is negligible.
+    private static let pointerPollInterval: TimeInterval = 1.0 / 60.0
     /// Hidden by `VisibilityMonitor` (fullscreen / Mission Control).
     private var isHiddenBySystem = false
 
@@ -142,10 +147,8 @@ final class NotchWindowController {
     /// panel itself. Called from `PikoFeature.stop()`; after it the module
     /// leaves no window and no global event monitor behind.
     func teardown() {
-        if let globalPointerMonitor { NSEvent.removeMonitor(globalPointerMonitor) }
-        if let localPointerMonitor { NSEvent.removeMonitor(localPointerMonitor) }
-        globalPointerMonitor = nil
-        localPointerMonitor = nil
+        pointerTimer?.invalidate()
+        pointerTimer = nil
         stateObserver?.cancel()
         stateObserver = nil
         if let screenObserver {
@@ -193,17 +196,7 @@ final class NotchWindowController {
         window = panel
         hostingView = hosting
 
-        // Pointer tracking for click pass-through: the panel only accepts
-        // mouse events while the pointer is over the drawn shape, so the menu
-        // bar items under the rest of the panel stay clickable.
-        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .scrollWheel]
-        globalPointerMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateMousePassThrough() }
-        }
-        localPointerMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            MainActor.assumeIsolated { self?.updateMousePassThrough() }
-            return event
-        }
+        startPointerTracking()
         // The shape can grow under a resting pointer (HUD, peek, expand).
         stateObserver = viewModel.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.updateMousePassThrough() }
@@ -216,6 +209,31 @@ final class NotchWindowController {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.place() }
         }
+    }
+
+    /// Samples the pointer on a timer to drive the click pass-through.
+    ///
+    /// The panel is a 624 x 320 transparent rectangle over the menu bar, and a
+    /// window with `ignoresMouseEvents = false` swallows clicks in its
+    /// transparent areas rather than forwarding them to the status items
+    /// underneath, so the panel has to ignore mouse events everywhere except
+    /// over the drawn shape and flip that the instant the pointer arrives.
+    ///
+    /// An earlier version watched `NSEvent.addGlobalMonitorForEvents(.mouseMoved)`
+    /// for this. That installs a system-wide mouse-moved event tap on the main
+    /// run loop, and while any menu (including Bench's own status menu) is
+    /// tracking, that tap throttled mouse-move delivery to the menu - the
+    /// highlight visibly lagged and skipped items. A timer samples
+    /// `NSEvent.mouseLocation` with no event tap at all, so menu tracking runs
+    /// at full speed. `.common` keeps the timer live during menu/drag tracking.
+    private func startPointerTracking() {
+        pointerTimer?.invalidate()
+        let timer = Timer(timeInterval: Self.pointerPollInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateMousePassThrough() }
+        }
+        timer.tolerance = Self.pointerPollInterval * 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        pointerTimer = timer
     }
 
     /// Accept mouse events only while the pointer is inside the drawn shape

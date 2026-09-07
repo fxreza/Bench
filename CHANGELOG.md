@@ -2,6 +2,10 @@
 
 ## 0.1.0 (2026-09-07)
 
+### Fixed
+
+- Piko no longer slows the menu bar. Its notch used a system-wide mouse-moved event monitor that throttled menu highlighting while any menu was open; it now samples the pointer on a timer with no event tap, so menus track the pointer at full speed.
+
 ### Added
 
 - Bench: one menu bar app hosting five modules - Shot (screenshots), Klip (clipboard history), Lingo (translation), Snap (window management) and Piko (Dynamic Island for the notch).
