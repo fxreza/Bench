@@ -162,18 +162,6 @@ final class WindowController {
         return true
     }
 
-    /// The title bar double-click behaviour: maximize a window Snap has not
-    /// touched, restore one it has. Repeated double-clicks therefore
-    /// alternate, which is what the BetterTouchTool trigger did with its two
-    /// cycling actions.
-    @discardableResult
-    func toggleMaximize(_ window: AXUIElement, pid: pid_t, gap: CGFloat, allowRestore: Bool) -> Bool {
-        if allowRestore, memory.has(identity(of: window, pid: pid)) {
-            return restore(window, pid: pid)
-        }
-        return apply(.maximize, to: window, pid: pid, gap: gap)
-    }
-
     // MARK: - AX helpers
 
     /// One attribute read, nil on any failure.

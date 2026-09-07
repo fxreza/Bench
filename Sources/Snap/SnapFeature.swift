@@ -13,9 +13,8 @@ import BenchCore
 ///   Geometry is `SnapLayout`, Accessibility plumbing is `WindowController`.
 /// - **Previous window.** ⌥⇥ flips between the last two focused windows
 ///   (`FocusHistory`), pressing again flips back.
-/// - **Two scripts and a gesture.** ⌃⌘T opens a new Terminal window, ⌘E
-///   opens Downloads in Finder, and a double-click on any window's title bar
-///   maximizes it, then restores it (`TitleBarClickWatcher`).
+/// - **Two scripts.** ⌃⌘T opens a new Terminal window and ⌘E opens
+///   Downloads in Finder (`ScriptRunner`).
 ///
 /// ### Not ported from BetterTouchTool
 ///
@@ -24,6 +23,8 @@ import BenchCore
 ///   Accessibility equivalent.
 /// - The three *Menubar Item: │* separators - cosmetic dividers in BTT's own
 ///   menu bar, with nothing to reproduce in Bench.
+/// - *Doubleclick Window Titlebar* (maximize / restore cycle) - left out on
+///   request.
 ///
 /// ### Caps Lock
 ///
@@ -34,9 +35,9 @@ public final class SnapFeature: BenchFeature {
     public let id = "snap"
     public let title = "Snap"
     public let symbolName = "macwindow.on.rectangle"
-    public let summary = "Window layouts, previous window, title bar double-click"
-    /// Accessibility moves the windows and feeds the click tap; Automation
-    /// is the per-app Apple Events grant the two scripts need.
+    public let summary = "Window layouts, restore, previous window and two scripts"
+    /// Accessibility moves the windows; Automation is the per-app Apple
+    /// Events grant the two scripts need.
     public let requiredPermissions: [BenchPermission] = [.accessibility, .automation]
 
     // MARK: - Actions
@@ -92,12 +93,10 @@ public final class SnapFeature: BenchFeature {
     private let settings = SnapSettings.shared
     private let controller = WindowController()
     private let focusHistory = FocusHistory()
-    private let watcher = TitleBarClickWatcher()
     private let menuTarget = SnapMenuTarget()
 
     private var cancellables: Set<AnyCancellable> = []
     private var isRunning = false
-    private var permissionHookInstalled = false
     /// The Accessibility prompt and the jump to Settings happen once per
     /// launch, not on every refused hotkey press.
     private var permissionPromptShown = false
@@ -118,32 +117,6 @@ public final class SnapFeature: BenchFeature {
         }
 
         focusHistory.start()
-
-        watcher.onDoubleClick = { [weak self] window, pid in
-            self?.handleTitleBarDoubleClick(window: window, pid: pid)
-        }
-        updateWatcher()
-
-        // The switch in Settings arms or disarms the tap immediately.
-        settings.$titleBarDoubleClick
-            .receive(on: RunLoop.main)
-            .sink { [weak self] enabled in
-                MainActor.assumeIsolated { self?.updateWatcher(enabled: enabled) }
-            }
-            .store(in: &cancellables)
-
-        // An Accessibility grant made after launch has to re-arm the tap;
-        // `PermissionsState` has no way to remove a hook, so the closure is
-        // installed once and guards on `isRunning` instead.
-        if !permissionHookInstalled {
-            permissionHookInstalled = true
-            PermissionsState.shared.onAccessibilityBecameTrusted.append { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self, self.isRunning else { return }
-                    self.updateWatcher()
-                }
-            }
-        }
     }
 
     public func stop() {
@@ -152,18 +125,7 @@ public final class SnapFeature: BenchFeature {
         HotkeyCenter.shared.unbindAll(featureID: id)
         cancellables.removeAll()
         focusHistory.stop()
-        watcher.remove()
-        watcher.onDoubleClick = nil
         controller.memory.removeAll()
-    }
-
-    private func updateWatcher(enabled: Bool? = nil) {
-        let wanted = enabled ?? settings.titleBarDoubleClick
-        if wanted && isRunning {
-            watcher.install()
-        } else {
-            watcher.remove()
-        }
     }
 
     // MARK: - Performing
@@ -219,15 +181,6 @@ public final class SnapFeature: BenchFeature {
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
         }
-    }
-
-    private func handleTitleBarDoubleClick(window: AXUIElement, pid: pid_t) {
-        guard isRunning, settings.titleBarDoubleClick else { return }
-        guard PermissionsState.shared.accessibilityTrusted else { return }
-        controller.toggleMaximize(
-            window, pid: pid,
-            gap: settings.effectiveGap,
-            allowRestore: settings.titleBarDoubleClickRestores)
     }
 
     // MARK: - Menu

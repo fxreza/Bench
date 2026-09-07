@@ -306,63 +306,6 @@ enum RestoreMemoryTests {
     ]
 }
 
-// MARK: - Title bar hit rule
-
-enum TitleBarHitTests {
-    /// An AX window frame: top-left origin, so y = 100 is its top edge.
-    static let window = CGRect(x: 200, y: 100, width: 900, height: 600)
-
-    static let tests: [TestCase] = [
-        ("the window's own chrome in the band is a hit", {
-            try expect(
-                TitleBarClickWatcher.isTitleBarHit(role: "AXWindow", pointY: 110, windowFrame: window),
-                "window role near the top edge")
-        }),
-        ("toolbars and the title text are hits", {
-            try expect(TitleBarClickWatcher.isTitleBarHit(role: "AXToolbar", pointY: 115, windowFrame: window), "toolbar")
-            try expect(TitleBarClickWatcher.isTitleBarHit(role: "AXStaticText", pointY: 112, windowFrame: window), "title")
-        }),
-        ("unnamed chrome in the band is a hit", {
-            try expect(TitleBarClickWatcher.isTitleBarHit(role: nil, pointY: 101, windowFrame: window), "no role")
-            try expect(TitleBarClickWatcher.isTitleBarHit(role: "AXGroup", pointY: 101, windowFrame: window), "group")
-        }),
-        ("controls in the band are not hits", {
-            for role in ["AXButton", "AXTextField", "AXPopUpButton", "AXTabGroup", "AXSearchField", "AXMenuItem"] {
-                try expect(
-                    !TitleBarClickWatcher.isTitleBarHit(role: role, pointY: 110, windowFrame: window),
-                    "\(role) must not maximize")
-            }
-        }),
-        ("below the band is never a hit", {
-            try expect(
-                !TitleBarClickWatcher.isTitleBarHit(role: "AXWindow", pointY: 400, windowFrame: window),
-                "middle of the window")
-            try expect(
-                !TitleBarClickWatcher.isTitleBarHit(role: "AXStaticText", pointY: 131, windowFrame: window),
-                "one point past the band")
-        }),
-        ("the band is exactly 30 points from the top edge", {
-            try expectEqual(TitleBarClickWatcher.titleBarBand, 30)
-            try expect(
-                TitleBarClickWatcher.isTitleBarHit(role: "AXWindow", pointY: 129.9, windowFrame: window),
-                "inside the band")
-            try expect(
-                !TitleBarClickWatcher.isTitleBarHit(role: "AXWindow", pointY: 130, windowFrame: window),
-                "the band is half-open")
-        }),
-        ("above the window is not a hit", {
-            try expect(
-                !TitleBarClickWatcher.isTitleBarHit(role: "AXWindow", pointY: 99, windowFrame: window),
-                "over the menu bar")
-        }),
-        ("an empty window frame is not a hit", {
-            try expect(
-                !TitleBarClickWatcher.isTitleBarHit(role: "AXWindow", pointY: 0, windowFrame: .zero),
-                "no frame, no title bar")
-        }),
-    ]
-}
-
 // MARK: - Feature wiring
 
 enum FeatureTests {
@@ -445,8 +388,6 @@ enum FeatureTests {
             defaults.removePersistentDomain(forName: suite)
             let settings = SnapSettings(defaults: defaults)
             try expectEqual(settings.gap, 0)
-            try expect(settings.titleBarDoubleClick, "title bar gesture is on by default")
-            try expect(settings.titleBarDoubleClickRestores, "the second double-click restores by default")
             try expectEqual(settings.terminalScript, SnapSettings.Defaults.terminalScript)
         }),
         ("a reset puts the shipped script back", {

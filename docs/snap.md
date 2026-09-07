@@ -1,8 +1,8 @@
 # Snap
 
 Window management: the BetterTouchTool triggers this Mac used to carry,
-rebuilt as a Bench module. Sixteen layouts, a previous-window switch, a title
-bar double-click gesture and two AppleScripts.
+rebuilt as a Bench module. Sixteen layouts, a previous-window switch and two
+AppleScripts.
 
 ## Shortcuts
 
@@ -37,46 +37,20 @@ plain ⌃⌘ and **either** Control key triggers the action.
 `⌘E` is a global hot key: it fires ahead of any app's own ⌘E menu item.
 Rebind it in Settings > Snap > Shortcuts if that gets in the way.
 
-## Title bar double-click
-
-`snap.titlebarDoubleClick` (default on). A listen-only
-`CGEvent` session tap watches `.leftMouseDown` events whose
-`.mouseEventClickState` is 2; the click is never delayed or swallowed. The
-element under the click comes from `AXUIElementCopyElementAtPosition`, and the
-click counts as a title bar hit when it lands in the top 30 points of the
-enclosing window's frame on something that is not a control (button, tab, text
-field, popup, search field…). Clicks with ⌘⌥⌃⇧ held are ignored.
-
-The first double-click maximizes, the next restores the previous size, and so
-on - BTT's two cycling actions. `snap.titlebarDoubleClickRestores` turns the
-restore half off, so every double-click maximizes.
-
-macOS has its own "double-click a window's title bar to" setting (System
-Settings > Desktop & Dock). It is **None** on this Mac, so nothing else reacts
-to the gesture; set to Zoom or Minimize, both would happen.
-
-The tap needs Accessibility, so it is installed only once
-`PermissionsState.accessibilityTrusted` is true and re-armed from
-`onAccessibilityBecameTrusted`.
-
 ## Not ported from BetterTouchTool
 
-- **Unpin Focused Window To NOT Float On Top.** Undoing "float on top" relies
-  on BTT's private window-level manipulation; Accessibility exposes no
-  equivalent, so there is nothing to port.
-- **The three "Menubar Item: │" separators.** Cosmetic dividers inside BTT's
-  own menu bar. Bench's status menu builds its own sections.
+- *Unpin Focused Window To NOT Float On Top* - needs BTT's private
+  window-level tricks; no Accessibility equivalent.
+- *Doubleclick Window Titlebar* (maximize, then restore) - left out on
+  request.
+- The three *Menubar Item: │* separators - cosmetic dividers in BTT's own
+  menu bar.
 
-Both are also stated in the Snap Settings pane, so the absence is visible
-where the user looks for them.
-
-## Preferences
+## Settings
 
 | Key | Default | Meaning |
 |---|---|---|
 | `snap.gap` | 0 | points between a window and the screen edges, and between two windows side by side |
-| `snap.titlebarDoubleClick` | on | install the double-click tap |
-| `snap.titlebarDoubleClickRestores` | on | the second double-click restores instead of maximizing again |
 | `snap.script.terminal` | see below | AppleScript for ⌃⌘T |
 | `snap.script.downloads` | see below | AppleScript for ⌘E |
 
@@ -136,7 +110,6 @@ what they rounded away.
 | `WindowController.swift` | Accessibility reads and writes, window identity, apply/restore |
 | `RestoreMemory.swift` | pre-Snap frames, keyed by pid + `CGWindowID`, capped at 64 |
 | `FocusHistory.swift` | focus tracking for Activate Previous Window |
-| `TitleBarClickWatcher.swift` | the event tap and the title bar hit rule |
 | `ScriptRunner.swift` | `NSAppleScript` off the main thread |
 | `SnapSettings.swift` / `SnapSettingsView.swift` | the `snap.` preferences and the pane |
 | `SnapFeature.swift` | the `BenchFeature`: action table, lifecycle, Window submenu |

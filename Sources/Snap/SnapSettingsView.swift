@@ -27,15 +27,6 @@ struct SnapSettingsView: View {
                 }
             }
 
-            Section("Title Bar") {
-                Toggle("Double-click a title bar to maximize", isOn: $settings.titleBarDoubleClick)
-                Toggle("Double-click again to restore the previous size", isOn: $settings.titleBarDoubleClickRestores)
-                    .disabled(!settings.titleBarDoubleClick)
-                Text("Watches for a double-click on any window's title bar and fills the screen with it; the next double-click puts it back. Clicks with ⌘⌥⌃⇧ held, and clicks on buttons, tabs and text fields, are ignored. Needs Accessibility. macOS has its own \"double-click a window's title bar to\" setting in System Settings > Desktop & Dock - if that is not None, both will happen.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             Section("Scripts") {
                 scriptEditor(
                     title: "New Terminal Window",

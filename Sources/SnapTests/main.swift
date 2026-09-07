@@ -14,7 +14,6 @@ exit(MainActor.assumeIsolated {
         ("GapTests", GapTests.tests),
         ("GeometryTests", GeometryTests.tests),
         ("RestoreMemoryTests", RestoreMemoryTests.tests),
-        ("TitleBarHitTests", TitleBarHitTests.tests),
         ("FeatureTests", FeatureTests.tests),
     ]
     return runSuites(suites)
