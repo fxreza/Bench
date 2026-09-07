@@ -36,11 +36,23 @@ let package = Package(
         .target(name: "Klip", dependencies: ["BenchCore"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
         .target(name: "Lingo", dependencies: ["BenchCore", "SelectedTextKit"], resources: [.process("Resources")], swiftSettings: swift5),
         .target(name: "Snap", dependencies: ["BenchCore"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
+        // Piko ships the mediaremote-adapter perl script and framework as
+        // verbatim resources, hence `.copy`; reach them through
+        // `Bundle.module.url(forResource:withExtension:subdirectory:)`.
+        .target(
+            name: "Piko",
+            dependencies: ["BenchCore"],
+            resources: [.copy("Resources")],
+            swiftSettings: swift5,
+            linkerSettings: [
+                .linkedFramework("CoreAudio"), .linkedFramework("IOKit"), .linkedFramework("IOBluetooth"),
+                .linkedFramework("CoreBluetooth"), .linkedFramework("ScreenCaptureKit"),
+            ]),
 
         // The app.
         .executableTarget(
             name: "Bench",
-            dependencies: ["BenchCore", "Shot", "Klip", "Lingo", "Snap"],
+            dependencies: ["BenchCore", "Shot", "Klip", "Lingo", "Snap", "Piko"],
             resources: [.process("Resources")],
             swiftSettings: mainActorDefault),
 
@@ -51,5 +63,6 @@ let package = Package(
         .executableTarget(name: "KlipTests", dependencies: ["Klip", "BenchTestKit"], swiftSettings: mainActorDefault),
         .executableTarget(name: "LingoTests", dependencies: ["Lingo", "BenchTestKit"], swiftSettings: swift5),
         .executableTarget(name: "SnapTests", dependencies: ["Snap", "BenchTestKit"], swiftSettings: mainActorDefault),
+        .executableTarget(name: "PikoTests", dependencies: ["Piko", "BenchTestKit"], swiftSettings: mainActorDefault),
     ]
 )

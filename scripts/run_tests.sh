@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 SCRATCH="${SCRATCH:-.build}"
 MODULES=("$@")
 if [[ ${#MODULES[@]} -eq 0 ]]; then
-    MODULES=(BenchCore Shot Klip Lingo Snap)
+    MODULES=(BenchCore Shot Klip Lingo Snap Piko)
 fi
 
 TARGETS=()

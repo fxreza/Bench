@@ -8,6 +8,7 @@ Bench is one menu-bar app made of four modules that used to be four apps:
 | Klip  | Klip (`../Klip`)       | clipboard history, folders, iCloud Drive sync |
 | Lingo | Transi (`../Transi`)   | translation popup (Google, Bing, Gemini), OCR, speech |
 | Snap  | new (replaces BetterTouchTool triggers) | window layout, previous window, titlebar double-click, two scripts |
+| Piko  | Piko (`../Piko`)       | Dynamic Island for the notch: volume/brightness HUD, now playing, Bluetooth, battery |
 
 Pure SwiftPM, macOS 14+, Swift 5 language mode. No Xcode on this Mac.
 
@@ -17,13 +18,13 @@ Pure SwiftPM, macOS 14+, Swift 5 language mode. No Xcode on this Mac.
 Sources/
   BenchCore/      shared plumbing, the only module every other target imports
   BenchTestKit/   expect(), runSuites() - the no-XCTest test framework
-  Shot/ Klip/ Lingo/ Snap/   one feature module each (library targets)
+  Shot/ Klip/ Lingo/ Snap/ Piko/   one feature module each (library targets)
   Bench/          the app: entry point, status bar, Settings window, updater
   <Module>Tests/  one executable test runner per module (scripts/run_tests.sh)
 ```
 
 Shot, Klip, Bench and the test runners compile with
-`-default-isolation MainActor`; Lingo and BenchCore do not (they carry
+`-default-isolation MainActor`; Lingo, Piko and BenchCore do not (they carry
 explicit `@MainActor`). See `Package.swift`.
 
 ## The feature contract (`BenchCore/Feature.swift`)
@@ -74,7 +75,7 @@ are the reusable Settings rows.
 
 - `BenchDefaults.standard` is the `UserDefaults` to use (a test instance
   launched with `BENCH_DATA_DIR` gets its own suite).
-- Every key is prefixed: `shot.`, `klip.`, `lingo.`, `snap.`, `bench.`.
+- Every key is prefixed: `shot.`, `klip.`, `lingo.`, `snap.`, `piko.`, `bench.`.
 - `BenchPaths.dataDirectory(feature: "Klip")` is
   `~/Library/Application Support/Bench/Klip`.
 - First run imports from the standalone apps, copy-only, never touching
