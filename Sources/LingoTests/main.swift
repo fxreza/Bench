@@ -7,6 +7,12 @@ import BenchTestKit
 exit(MainActor.assumeIsolated {
     let suites: [TestSuite] = [
         ("SmokeTests", [("feature id", { try expectEqual(LingoFeature().id, "lingo") })]),
+        ("LanguageCatalogTests", LanguageCatalogTests.tests),
+        ("ScriptDetectorTests", ScriptDetectorTests.tests),
+        ("LingoActionTests", LingoActionTests.tests),
+        ("SettingsStoreTests", SettingsStoreTests.tests),
+        ("GoogleEngineParserTests", GoogleEngineParserTests.tests),
+        ("BingEngineParserTests", BingEngineParserTests.tests),
     ]
     return runSuites(suites)
 })
