@@ -1,0 +1,19 @@
+# SwiftPM
+.build/
+.build-*/
+.swiftpm/
+Package.resolved.bak
+
+# Local build output. The `.noindex` suffix keeps Spotlight from indexing a
+# second Bench.app next to the installed one (see AGENTS.md).
+build.noindex/
+dist/app.noindex/
+
+# Editors / OS
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Agent worktrees
+.worktrees/
