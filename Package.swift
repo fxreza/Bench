@@ -32,7 +32,7 @@ let package = Package(
         // Feature modules. Each exposes exactly one public type, its
         // `BenchFeature`, and keeps everything else internal so nothing
         // collides across modules.
-        .target(name: "Shot", dependencies: ["BenchCore"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
+        .target(name: "Shot", dependencies: ["BenchCore"], exclude: ["ATTRIBUTION.md"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
         .target(name: "Klip", dependencies: ["BenchCore"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
         .target(name: "Lingo", dependencies: ["BenchCore", "SelectedTextKit"], resources: [.process("Resources")], swiftSettings: swift5),
         .target(name: "Snap", dependencies: ["BenchCore"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
