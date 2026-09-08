@@ -325,9 +325,10 @@ enum FeatureTests {
                 "snap.leftThird", "snap.middleThird", "snap.rightThird",
                 "snap.leftTwoThirds", "snap.centerTwoThirds", "snap.rightTwoThirds",
                 "snap.previousWindow", "snap.terminalScript", "snap.downloadsScript",
+                "snap.openApp1", "snap.openApp2", "snap.openApp3",
             ]
             try expectEqual(ids, expected)
-            try expectEqual(SnapFeature.actionTable.count, 20)
+            try expectEqual(SnapFeature.actionTable.count, 23)
         }),
         ("every layout is reachable from a shortcut", {
             let layouts = SnapFeature.actionTable.compactMap { entry -> SnapLayout? in
@@ -347,8 +348,13 @@ enum FeatureTests {
             try expectEqual(binding("snap.bottomRight"), KeyBinding(39, [.control, .command]))
             try expectEqual(binding("snap.centerTwoThirds"), KeyBinding(40, [.control, .command]))
             try expectEqual(binding("snap.previousWindow"), KeyBinding(48, [.option]))
-            try expectEqual(binding("snap.terminalScript"), KeyBinding(17, [.control, .command]))
-            try expectEqual(binding("snap.downloadsScript"), KeyBinding(14, [.command]))
+            // Launchers live on Caps Lock+⌥ (⌃⌥), away from the ⌃⌘ window family.
+            try expectEqual(binding("snap.terminalScript"), KeyBinding(17, [.control, .option]))
+            try expectEqual(binding("snap.downloadsScript"), KeyBinding(14, [.control, .option]))
+            // The spare app launchers ship unbound.
+            for slot in 1...SnapSettings.launcherSlots {
+                try expectEqual(binding("snap.openApp\(slot)"), nil)
+            }
         }),
         ("no two actions ship with the same shortcut", {
             var seen: Set<KeyBinding> = []
@@ -401,6 +407,152 @@ enum FeatureTests {
             settings.resetDownloadsScript()
             try expectEqual(settings.terminalScript, SnapSettings.Defaults.terminalScript)
             try expectEqual(settings.downloadsScript, SnapSettings.Defaults.downloadsScript)
+        }),
+    ]
+}
+
+// MARK: - Modifier move / resize
+
+/// Pure arithmetic only: no Accessibility, no event monitors, no timer.
+/// Frames are AX coordinates (top-left origin, y down) and pointers are Cocoa
+/// (bottom-left origin, y up) - exactly the mix `ModifierDragController`
+/// hands to the math.
+enum ModifierDragTests {
+    /// `XCTUnwrap` for a runner with no XCTest: a nil frame fails the test
+    /// instead of trapping.
+    static func require(
+        _ rect: CGRect?, _ message: String = "expected a frame",
+        file: StaticString = #file, line: UInt = #line
+    ) throws -> CGRect {
+        guard let rect else { throw TestFailure(message: message, file: file, line: line) }
+        return rect
+    }
+
+    /// A 400 x 300 window whose top edge is 200 pt below the top of the screen.
+    static let frame = CGRect(x: 100, y: 200, width: 400, height: 300)
+    static let start = CGPoint(x: 500, y: 500)
+
+    static let tests: [TestCase] = [
+        ("below the threshold nothing moves", {
+            // ~1.4 pt of travel against a 2 pt threshold.
+            let pointer = CGPoint(x: start.x + 1, y: start.y + 1)
+            try expectNil(ModifierDragMath.frame(
+                for: .move, startFrame: frame, startPointer: start, pointer: pointer, threshold: 2))
+            try expectNil(ModifierDragMath.frame(
+                for: .resize, startFrame: frame, startPointer: start, pointer: pointer, threshold: 2))
+        }),
+        ("the threshold is a distance, not a per-axis limit", {
+            try expect(
+                ModifierDragMath.passedThreshold(from: start, to: CGPoint(x: 502, y: 500), threshold: 2),
+                "2 pt right is exactly the threshold")
+            try expect(
+                !ModifierDragMath.passedThreshold(from: start, to: CGPoint(x: 501, y: 500), threshold: 2),
+                "1 pt right is not")
+            try expect(
+                ModifierDragMath.passedThreshold(from: start, to: start, threshold: 0),
+                "a zero threshold is always passed")
+        }),
+        ("moving right and down carries the window along", {
+            // Cocoa +30 x, -20 y (down the screen) is AX +30 x, +20 y.
+            let pointer = CGPoint(x: start.x + 30, y: start.y - 20)
+            let moved = try require(ModifierDragMath.frame(
+                for: .move, startFrame: frame, startPointer: start, pointer: pointer, threshold: 2))
+            try expectRect(moved, CGRect(x: 130, y: 220, width: 400, height: 300))
+        }),
+        ("moving left and up carries it back", {
+            let pointer = CGPoint(x: start.x - 45, y: start.y + 15)
+            let moved = try require(ModifierDragMath.frame(
+                for: .move, startFrame: frame, startPointer: start, pointer: pointer, threshold: 2))
+            try expectRect(moved, CGRect(x: 55, y: 185, width: 400, height: 300))
+        }),
+        ("resizing keeps the top-left corner and follows the pointer", {
+            // Right grows the width, down grows the height.
+            let pointer = CGPoint(x: start.x + 60, y: start.y - 40)
+            let resized = try require(ModifierDragMath.frame(
+                for: .resize, startFrame: frame, startPointer: start, pointer: pointer, threshold: 2))
+            try expectRect(resized, CGRect(x: 100, y: 200, width: 460, height: 340))
+        }),
+        ("resizing the other way shrinks the window", {
+            let pointer = CGPoint(x: start.x - 100, y: start.y + 50)
+            let resized = try require(ModifierDragMath.frame(
+                for: .resize, startFrame: frame, startPointer: start, pointer: pointer, threshold: 2))
+            try expectRect(resized, CGRect(x: 100, y: 200, width: 300, height: 250))
+        }),
+        ("a resize is never driven below the minimum size", {
+            let pointer = CGPoint(x: start.x - 5000, y: start.y + 5000)
+            let resized = try require(ModifierDragMath.frame(
+                for: .resize, startFrame: frame, startPointer: start, pointer: pointer, threshold: 2))
+            try expectRect(resized, CGRect(x: 100, y: 200, width: 50, height: 50))
+            try expectEqual(ModifierDragMath.minimumSize, CGSize(width: 50, height: 50))
+        }),
+        ("a move is never clamped, only a resize", {
+            let pointer = CGPoint(x: start.x - 5000, y: start.y + 5000)
+            let moved = try require(ModifierDragMath.frame(
+                for: .move, startFrame: frame, startPointer: start, pointer: pointer, threshold: 2))
+            try expectRect(moved, CGRect(x: -4900, y: -4800, width: 400, height: 300))
+        }),
+        ("a Cocoa pointer delta flips into AX space", {
+            let delta = ModifierDragMath.axDelta(from: start, to: CGPoint(x: 510, y: 480))
+            try expectEqual(delta.width, 10)
+            try expectEqual(delta.height, 20, "down the screen is a positive AX delta")
+        }),
+        ("a modifier combination matches exactly", {
+            let move: NSEvent.ModifierFlags = [.shift, .option]
+            try expect(ModifierDragMath.matches([.shift, .option], move), "the combination itself")
+            try expect(!ModifierDragMath.matches([.shift, .option, .command], move), "one extra modifier does not")
+            try expect(!ModifierDragMath.matches([.shift], move), "one missing modifier does not")
+            try expect(!ModifierDragMath.matches([.shift, .control], move), "the resize combination does not")
+            try expect(!ModifierDragMath.matches([], move), "no modifiers at all does not")
+        }),
+        ("an empty combination is never triggered", {
+            try expect(!ModifierDragMath.matches([], []), "nothing held")
+            try expect(!ModifierDragMath.matches([.shift, .option], []), "something held")
+        }),
+        ("Caps Lock and the numeric pad do not break a match", {
+            // Caps Lock is Right Control on this Mac, so a stray `.capsLock`
+            // can only come from another keyboard - and either way it must
+            // not cancel a gesture the user is deliberately holding.
+            let resize: NSEvent.ModifierFlags = [.shift, .control]
+            try expect(ModifierDragMath.matches([.shift, .control, .capsLock], resize), "caps lock ignored")
+            try expect(ModifierDragMath.matches([.shift, .control, .numericPad], resize), "numeric pad ignored")
+        }),
+        ("either Control key is Control", {
+            // The device-dependent right-Control bit (0x2000) sits below the
+            // device-independent mask, so ⌃ is ⌃ whichever key was pressed.
+            let rightControl = NSEvent.ModifierFlags(
+                rawValue: NSEvent.ModifierFlags.control.rawValue | 0x2000).union(.shift)
+            try expect(ModifierDragMath.matches(rightControl, [.shift, .control]), "right control matches")
+        }),
+        ("the shipped defaults are BetterTouchTool's", {
+            try expectEqual(SnapSettings.Defaults.moveModifiers, [.shift, .option])
+            try expectEqual(SnapSettings.Defaults.resizeModifiers, [.shift, .control])
+            try expectEqual(SnapSettings.Defaults.dragThreshold, 2)
+            try expect(!SnapSettings.Defaults.bringToFront, "bring to front is off")
+            try expect(SnapSettings.Defaults.modifierDragEnabled, "the gestures are on")
+        }),
+        ("gesture settings round-trip through defaults", {
+            let suite = "snap.tests.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defaults.removePersistentDomain(forName: suite)
+            let settings = SnapSettings(defaults: defaults)
+            settings.moveModifiers = [.control, .command]
+            settings.dragThreshold = 7
+            settings.bringToFront = true
+            settings.modifierDragEnabled = false
+            let reread = SnapSettings(defaults: defaults)
+            try expectEqual(reread.moveModifiers, [.control, .command])
+            try expectEqual(reread.dragThreshold, 7)
+            try expect(reread.bringToFront, "bring to front persisted")
+            try expect(!reread.modifierDragEnabled, "the enable flag persisted")
+        }),
+        ("the threshold is clamped", {
+            let settings = SnapSettings(defaults: UserDefaults(suiteName: "snap.tests.\(UUID().uuidString)")!)
+            settings.dragThreshold = -3
+            try expectEqual(settings.effectiveDragThreshold, 0)
+            settings.dragThreshold = 10_000
+            try expectEqual(settings.effectiveDragThreshold, 100)
+            settings.dragThreshold = 4
+            try expectEqual(settings.effectiveDragThreshold, 4)
         }),
     ]
 }

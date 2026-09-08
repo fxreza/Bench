@@ -6,15 +6,23 @@ import BenchCore
 /// Window management: the BetterTouchTool triggers this Mac used to carry,
 /// reimplemented as a Bench module.
 ///
-/// Three groups of behaviour:
+/// Four groups of behaviour:
 ///
 /// - **Layouts.** Sixteen placements (halves, quarters, thirds, two-thirds,
 ///   maximize, center) plus "Restore Previous Size", all on ⌃⌘ combinations.
 ///   Geometry is `SnapLayout`, Accessibility plumbing is `WindowController`.
 /// - **Previous window.** ⌥⇥ flips between the last two focused windows
 ///   (`FocusHistory`), pressing again flips back.
-/// - **Two scripts.** ⌃⌘T opens a new Terminal window and ⌘E opens
-///   Downloads in Finder (`ScriptRunner`).
+/// - **Two scripts.** ⌃⌥T opens a new Terminal window and ⌃⌥E opens
+///   Downloads in Finder (`ScriptRunner`). Typed as Caps Lock+⌥ on this
+///   Mac: ⌃⌥ is a family no app or system shortcut uses with a letter, so
+///   launchers live there, away from the ⌃⌘ window family.
+/// - **App launchers.** Three unbound slots that open whatever app was
+///   picked in the Snap pane, for the next thing worth a shortcut.
+/// - **Moving & resizing modifier keys.** Holding ⇧⌥ and moving the mouse
+///   moves the window under the pointer; ⇧⌃ resizes it from its top-left
+///   corner. No click needed, and no window is raised unless the user turns
+///   that on (`ModifierDragController`).
 ///
 /// ### Not ported from BetterTouchTool
 ///
@@ -49,9 +57,13 @@ public final class SnapFeature: BenchFeature {
         case previousWindow
         case terminalScript
         case downloadsScript
+        /// One of `SnapSettings.launcherSlots` app launchers, 1-based.
+        case openApp(Int)
     }
 
     private nonisolated static let control: KeyModifiers = [.control, .command]
+    /// Caps Lock+⌥ on this Mac: the launcher family.
+    private nonisolated static let launcher: KeyModifiers = [.control, .option]
 
     /// Every action, in the order the Shortcuts pane and the Window submenu
     /// show them. The ids are frozen: `ShortcutStore` persists rebinds under
@@ -78,10 +90,13 @@ public final class SnapFeature: BenchFeature {
         ("snap.rightTwoThirds", "Right Two Thirds", .layout(.rightTwoThirds), KeyBinding(37, control), nil),
         ("snap.previousWindow", "Activate Previous Window", .previousWindow, KeyBinding(48, [.option]),
          "Flips between the last two focused windows; press again to flip back."),
-        ("snap.terminalScript", "New Terminal Window", .terminalScript, KeyBinding(17, control),
-         "Runs the Terminal script from this pane."),
-        ("snap.downloadsScript", "Open Downloads in Finder", .downloadsScript, KeyBinding(14, [.command]),
-         "A global ⌘E: it wins over any app's own ⌘E menu item."),
+        ("snap.terminalScript", "New Terminal Window", .terminalScript, KeyBinding(17, launcher),
+         "Runs the Terminal script from this pane. Caps Lock+⌥T on this Mac."),
+        ("snap.downloadsScript", "Open Downloads in Finder", .downloadsScript, KeyBinding(14, launcher),
+         "Runs the Finder script from this pane. Caps Lock+⌥E on this Mac."),
+        ("snap.openApp1", "Open App 1", .openApp(1), nil, "Pick the app in the Snap pane. Ships unbound."),
+        ("snap.openApp2", "Open App 2", .openApp(2), nil, "Pick the app in the Snap pane. Ships unbound."),
+        ("snap.openApp3", "Open App 3", .openApp(3), nil, "Pick the app in the Snap pane. Ships unbound."),
     ]
 
     public private(set) lazy var hotkeyActions: [HotkeyAction] = Self.actionTable.map {
@@ -94,6 +109,7 @@ public final class SnapFeature: BenchFeature {
     private let controller = WindowController()
     private let focusHistory = FocusHistory()
     private let menuTarget = SnapMenuTarget()
+    private lazy var modifierDrag = ModifierDragController(settings: settings, controller: controller)
 
     private var cancellables: Set<AnyCancellable> = []
     private var isRunning = false
@@ -117,6 +133,7 @@ public final class SnapFeature: BenchFeature {
         }
 
         focusHistory.start()
+        modifierDrag.start()
     }
 
     public func stop() {
@@ -125,6 +142,7 @@ public final class SnapFeature: BenchFeature {
         HotkeyCenter.shared.unbindAll(featureID: id)
         cancellables.removeAll()
         focusHistory.stop()
+        modifierDrag.stop()
         controller.memory.removeAll()
     }
 
@@ -150,6 +168,28 @@ public final class SnapFeature: BenchFeature {
             runScript(settings.terminalScript, name: "New Terminal Window", fromMenu: fromMenu)
         case .downloadsScript:
             runScript(settings.downloadsScript, name: "Open Downloads in Finder", fromMenu: fromMenu)
+        case .openApp(let slot):
+            openApp(slot: slot, fromMenu: fromMenu)
+        }
+    }
+
+    /// Opens (or brings forward) the app picked for `slot`. An empty slot
+    /// beeps on a hotkey and explains itself from the menu, like the scripts.
+    private func openApp(slot: Int, fromMenu: Bool) {
+        guard let url = settings.launcherURL(slot) else {
+            NSSound.beep()
+            guard fromMenu else { return }
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = "Open App \(slot) has no app yet"
+            alert.informativeText = "Pick one in Settings > Snap > Open apps."
+            alert.addButton(withTitle: "OK")
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+            return
+        }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+            if let error { NSLog("[Snap] open app %@ failed: %@", url.path, error.localizedDescription) }
         }
     }
 
@@ -219,6 +259,22 @@ public final class SnapFeature: BenchFeature {
         add(["snap.previousWindow"])
         submenu.addItem(.separator())
         add(["snap.terminalScript", "snap.downloadsScript"])
+
+        // Launchers show under the app they open; an empty slot is not
+        // listed, so the menu never offers an "Open App 2" that does nothing.
+        let launchers = (1...SnapSettings.launcherSlots).compactMap { slot -> NSMenuItem? in
+            guard let name = settings.launcherName(slot) else { return nil }
+            return menuTarget.makeItem(
+                title: "Open \(name)",
+                binding: ShortcutStore.shared.binding(for: "snap.openApp\(slot)")
+            ) { [weak self] in
+                self?.perform(.openApp(slot), fromMenu: true)
+            }
+        }
+        if !launchers.isEmpty {
+            submenu.addItem(.separator())
+            launchers.forEach { submenu.addItem($0) }
+        }
 
         root.submenu = submenu
         return [root]

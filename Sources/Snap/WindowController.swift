@@ -100,13 +100,16 @@ final class WindowController {
         setSize(window, axRect.size)
     }
 
-    private func setSize(_ window: AXUIElement, _ size: CGSize) {
+    /// One `kAXSizeAttribute` write. Internal because the modifier-drag
+    /// gestures write size and position one at a time, sixty times a second.
+    func setSize(_ window: AXUIElement, _ size: CGSize) {
         var value = size
         guard let axValue = AXValueCreate(.cgSize, &value) else { return }
         AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, axValue)
     }
 
-    private func setPosition(_ window: AXUIElement, _ point: CGPoint) {
+    /// One `kAXPositionAttribute` write. See `setSize`.
+    func setPosition(_ window: AXUIElement, _ point: CGPoint) {
         var value = point
         guard let axValue = AXValueCreate(.cgPoint, &value) else { return }
         AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, axValue)

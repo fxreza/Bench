@@ -15,6 +15,7 @@ exit(MainActor.assumeIsolated {
         ("GeometryTests", GeometryTests.tests),
         ("RestoreMemoryTests", RestoreMemoryTests.tests),
         ("FeatureTests", FeatureTests.tests),
+        ("ModifierDragTests", ModifierDragTests.tests),
     ]
     return runSuites(suites)
 })

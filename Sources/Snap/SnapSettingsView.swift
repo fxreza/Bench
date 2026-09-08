@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import BenchCore
 
-/// Snap's pane in the Settings window: the gap, the title bar gesture, the
-/// two editable scripts, the shortcut list, and a note about what did not
-/// come over from BetterTouchTool.
+/// Snap's pane in the Settings window: the gap, the modifier move/resize
+/// gestures, the two editable scripts, the shortcut list, and a note about
+/// what did not come over from BetterTouchTool.
 struct SnapSettingsView: View {
     @ObservedObject private var settings = SnapSettings.shared
     @State private var scriptMessage: String?
@@ -27,6 +29,28 @@ struct SnapSettingsView: View {
                 }
             }
 
+            Section("Window moving & resizing") {
+                Toggle("Move and resize with modifier keys", isOn: $settings.modifierDragEnabled)
+                modifierRow("Move", flags: $settings.moveModifiers)
+                modifierRow("Resize", flags: $settings.resizeModifiers)
+                HStack {
+                    Text("Threshold")
+                    TextField("", value: $settings.dragThreshold, format: .number)
+                        .labelsHidden()
+                        .frame(width: 60)
+                        .multilineTextAlignment(.trailing)
+                    Text("pt")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .disabled(!settings.modifierDragEnabled)
+                Toggle("Bring the moved window to the front", isOn: $settings.bringToFront)
+                    .disabled(!settings.modifierDragEnabled)
+                Text("Hold the keys and move the mouse over a window, no click needed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Scripts") {
                 scriptEditor(
                     title: "New Terminal Window",
@@ -43,6 +67,24 @@ struct SnapSettingsView: View {
                         .foregroundStyle(scriptMessageIsError ? .red : .secondary)
                 }
                 Text("AppleScript. The first run against Terminal or Finder asks for Automation permission.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Open apps") {
+                ForEach(1...SnapSettings.launcherSlots, id: \.self) { slot in
+                    HStack {
+                        Text("App \(slot)")
+                            .frame(width: 56, alignment: .leading)
+                        Text(settings.launcherName(slot) ?? "Not set")
+                            .foregroundStyle(settings.launcherName(slot) == nil ? .secondary : .primary)
+                        Spacer()
+                        Button("Choose…") { chooseApp(for: slot) }
+                        Button("Clear") { settings.setLauncher(slot, url: nil) }
+                            .disabled(settings.launcherName(slot) == nil)
+                    }
+                }
+                Text("Three spare shortcuts that open (or bring forward) an app. They ship unbound: pick the app, then record a key in the list below. Caps Lock+⌥ plus a letter is free on this Mac, apart from ⌃⌥E and ⌃⌥T, which the two scripts use.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -67,6 +109,59 @@ struct SnapSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// The five modifiers a gesture can be built from, in the order a Mac
+    /// keyboard lays them out.
+    private struct ModifierChoice: Identifiable {
+        let id: Int
+        let flag: NSEvent.ModifierFlags
+        let label: String
+    }
+
+    private static let modifierChoices: [ModifierChoice] = [
+        ModifierChoice(id: 0, flag: .shift, label: "⇧ shift"),
+        ModifierChoice(id: 1, flag: .function, label: "fn"),
+        ModifierChoice(id: 2, flag: .control, label: "⌃ ctrl"),
+        ModifierChoice(id: 3, flag: .option, label: "⌥ opt"),
+        ModifierChoice(id: 4, flag: .command, label: "⌘ cmd"),
+    ]
+
+    /// One labelled row of five checkboxes editing a modifier combination.
+    /// The gesture fires on an exact match, so a checked box is a key that
+    /// must be down and an unchecked one a key that must not be.
+    @ViewBuilder
+    private func modifierRow(_ title: String, flags: Binding<NSEvent.ModifierFlags>) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .frame(width: 56, alignment: .leading)
+            ForEach(Self.modifierChoices) { choice in
+                Toggle(choice.label, isOn: Binding(
+                    get: { flags.wrappedValue.contains(choice.flag) },
+                    set: { isOn in
+                        var value = flags.wrappedValue
+                        if isOn { value.insert(choice.flag) } else { value.remove(choice.flag) }
+                        flags.wrappedValue = value
+                    }))
+                    .toggleStyle(.checkbox)
+            }
+            Spacer()
+        }
+        .disabled(!settings.modifierDragEnabled)
+    }
+
+    /// Picks a .app for launcher `slot`. Only the path is kept: a moved or
+    /// deleted app just makes the slot read "Not set" again.
+    private func chooseApp(for slot: Int) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose the app for Open App \(slot)"
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        settings.setLauncher(slot, url: url)
     }
 
     @ViewBuilder
