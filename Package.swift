@@ -36,6 +36,9 @@ let package = Package(
         .target(name: "Klip", dependencies: ["BenchCore"], exclude: ["ATTRIBUTION.md"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
         .target(name: "Lingo", dependencies: ["BenchCore", "SelectedTextKit"], exclude: ["ATTRIBUTION.md"], resources: [.process("Resources")], swiftSettings: swift5),
         .target(name: "Snap", dependencies: ["BenchCore"], resources: [.process("Resources")], swiftSettings: mainActorDefault),
+        // Tap loads MultitouchSupport.framework with dlopen at runtime, so it
+        // links nothing private and ships no resources.
+        .target(name: "Tap", dependencies: ["BenchCore"], swiftSettings: mainActorDefault),
         // Piko ships the mediaremote-adapter perl script and framework as
         // verbatim resources, hence `.copy`; reach them through
         // `Bundle.module.url(forResource:withExtension:subdirectory:)`.
@@ -53,7 +56,7 @@ let package = Package(
         // The app.
         .executableTarget(
             name: "Bench",
-            dependencies: ["BenchCore", "Shot", "Klip", "Lingo", "Snap", "Piko"],
+            dependencies: ["BenchCore", "Shot", "Klip", "Lingo", "Snap", "Piko", "Tap"],
             resources: [.process("Resources")],
             swiftSettings: mainActorDefault),
 
@@ -64,6 +67,7 @@ let package = Package(
         .executableTarget(name: "KlipTests", dependencies: ["Klip", "BenchTestKit"], swiftSettings: mainActorDefault),
         .executableTarget(name: "LingoTests", dependencies: ["Lingo", "BenchTestKit"], swiftSettings: swift5),
         .executableTarget(name: "SnapTests", dependencies: ["Snap", "BenchTestKit"], swiftSettings: mainActorDefault),
+        .executableTarget(name: "TapTests", dependencies: ["Tap", "BenchTestKit"], swiftSettings: mainActorDefault),
         .executableTarget(name: "PikoTests", dependencies: ["Piko", "BenchTestKit"], swiftSettings: mainActorDefault),
     ]
 )
