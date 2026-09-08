@@ -9,6 +9,11 @@ extension Notification.Name {
     /// only the app shell cares: no module ever hides the icon.
     static let benchStatusBarVisibilityChanged =
         Notification.Name("bench.statusBarVisibilityChanged")
+
+    /// Posted when `AppSettings.menuBarSeparatorCount` changes, so
+    /// `MenuBarSeparators` can add or remove status items to match.
+    static let benchMenuBarSeparatorsChanged =
+        Notification.Name("bench.menuBarSeparatorsChanged")
 }
 
 /// The app shell's own preferences - the ones that belong to no module.
@@ -28,6 +33,7 @@ final class AppSettings: ObservableObject {
         static let includePrereleases = "bench.includePrereleases"
         static let hasCompletedOnboarding = "bench.hasCompletedOnboarding"
         static let suppressStandaloneQuitPrompt = "bench.suppressStandaloneQuitPrompt"
+        static let menuBarSeparatorCount = "bench.menuBarSeparatorCount"
     }
 
     /// Hides the menu bar icon. The way back in is relaunching Bench, which
@@ -64,6 +70,22 @@ final class AppSettings: ObservableObject {
         set { defaults.set(newValue, forKey: Key.suppressStandaloneQuitPrompt) }
     }
 
+    /// How many thin vertical divider lines `MenuBarSeparators` keeps in the
+    /// menu bar, 0 to 5. Clamped on write so a bad default or a stray
+    /// `defaults write` can never ask for more items than the class expects.
+    @Published var menuBarSeparatorCount: Int {
+        didSet {
+            let clamped = min(max(menuBarSeparatorCount, 0), 5)
+            guard clamped == menuBarSeparatorCount else {
+                menuBarSeparatorCount = clamped // re-enters didSet once, then settles
+                return
+            }
+            guard oldValue != menuBarSeparatorCount else { return }
+            defaults.set(menuBarSeparatorCount, forKey: Key.menuBarSeparatorCount)
+            NotificationCenter.default.post(name: .benchMenuBarSeparatorsChanged, object: nil)
+        }
+    }
+
     private init() {
         // Update checking is on unless the user turned it off; everything else
         // defaults to false, which `bool(forKey:)` already gives.
@@ -71,5 +93,6 @@ final class AppSettings: ObservableObject {
         hideMenuBarIcon = defaults.bool(forKey: Key.hideMenuBarIcon)
         autoCheckUpdates = defaults.bool(forKey: Key.autoCheckUpdates)
         includePrereleases = defaults.bool(forKey: Key.includePrereleases)
+        menuBarSeparatorCount = min(max(defaults.integer(forKey: Key.menuBarSeparatorCount), 0), 5)
     }
 }

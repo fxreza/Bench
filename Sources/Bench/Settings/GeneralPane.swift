@@ -8,6 +8,7 @@ struct GeneralPane: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var appearance = AppearanceSettings.shared
     @ObservedObject private var registry = FeatureRegistry.shared
+    @StateObject private var dock = DockSpacerModel()
     @State private var launchAtLoginError: String?
 
     var body: some View {
@@ -28,6 +29,23 @@ struct GeneralPane: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                Stepper(
+                    "Menu bar divider lines: \(settings.menuBarSeparatorCount)",
+                    value: $settings.menuBarSeparatorCount, in: 0...5)
+                Text("Thin vertical lines you can ⌘-drag between menu bar icons. Clicking one does nothing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Dock") {
+                Stepper("Dock gaps: \(dock.normal)", value: $dock.normal, in: 0...DockSpacers.maximum)
+                Stepper("Half-width Dock gaps: \(dock.small)", value: $dock.small, in: 0...DockSpacers.maximum)
+                Text(dock.isPending
+                     ? "Applying… the Dock restarts for a moment."
+                     : "macOS's own invisible gap tiles, an icon wide or half that. New ones appear at the right end of the apps; ⌘-drag them between icons. Every change restarts the Dock.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Appearance") {
@@ -72,6 +90,8 @@ struct GeneralPane: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { dock.startWatching() }
+        .onDisappear { dock.stopWatching() }
     }
 
     // MARK: - Bindings

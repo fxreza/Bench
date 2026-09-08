@@ -5,6 +5,7 @@ import Lingo
 import Shot
 import Snap
 import Piko
+import Tap
 import notify
 
 /// A feature that can open an image file handed to the app by Finder or
@@ -24,6 +25,7 @@ extension ShotFeature: ImageOpening {}
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
+    private var menuBarSeparators: MenuBarSeparators?
     private var settingsKeyMonitor: Any?
     private var openSettingsObserver: NSObjectProtocol?
     /// URLs that arrived before the app finished launching.
@@ -36,13 +38,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        FeatureRegistry.shared.register([ShotFeature(), KlipFeature(), LingoFeature(), SnapFeature(), PikoFeature()])
+        FeatureRegistry.shared.register([ShotFeature(), KlipFeature(), LingoFeature(), SnapFeature(), PikoFeature(), TapFeature()])
         AppearanceSettings.shared.apply()
         installEditMenu()
         installSettingsKeyMonitor()
         observeOpenSettings()
 
         statusBar = StatusBarController()
+        menuBarSeparators = MenuBarSeparators()
         FeatureRegistry.shared.startEnabled()
 
         warnAboutStandaloneAppsIfNeeded()
