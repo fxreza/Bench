@@ -86,6 +86,56 @@ enum WindowEnumerator {
         windows.first { $0.frame.contains(point) }
     }
 
+    /// The window a rubber-band selection is credited to: the front-most window
+    /// in `windows` (expected front-to-back) whose frame intersects `rect`, and
+    /// among those the one covering the most of it. `nil` when nothing overlaps.
+    ///
+    /// Pure and testable - `rect` and every frame are global AppKit points.
+    nonisolated static func sourceWindow(for rect: CGRect, in windows: [WindowInfo]) -> WindowInfo? {
+        let target = rect.standardized
+        guard target.width > 0, target.height > 0 else { return nil }
+
+        var best: WindowInfo?
+        var bestArea: CGFloat = 0
+        for window in windows {
+            let overlap = window.frame.standardized.intersection(target)
+            guard !overlap.isNull, overlap.width > 0, overlap.height > 0 else { continue }
+            let area = overlap.width * overlap.height
+            // Strictly greater keeps the front-most window on a tie, because
+            // `windows` arrives front-to-back.
+            if area > bestArea {
+                bestArea = area
+                best = window
+            }
+        }
+        return best
+    }
+
+    /// Display name to credit for `window`: the running application's localized
+    /// name, falling back to the window server's owner name. `nil` for our own
+    /// process (Bench is never the source of its own capture) and for a blank
+    /// name.
+    static func sourceAppName(for window: WindowInfo) -> String? {
+        guard window.ownerPID != ProcessInfo.processInfo.processIdentifier else { return nil }
+        let running = NSRunningApplication(processIdentifier: window.ownerPID)
+        let name = running?.localizedName ?? window.ownerName
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Bundle identifier behind `window`, when the process still exists.
+    static func sourceBundleID(for window: WindowInfo) -> String? {
+        guard window.ownerPID != ProcessInfo.processInfo.processIdentifier else { return nil }
+        return NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier
+    }
+
+    /// `sourceWindow(for:in:)` resolved to (name, bundle id).
+    static func source(for rect: CGRect, in windows: [WindowInfo]) -> (name: String, bundleID: String?)? {
+        guard let window = sourceWindow(for: rect, in: windows),
+              let name = sourceAppName(for: window) else { return nil }
+        return (name, sourceBundleID(for: window))
+    }
+
     /// Converts `CGWindowList` bounds (points, origin at the **top-left** of the
     /// primary display, y growing downward) to global AppKit coordinates
     /// (points, origin at the **bottom-left** of the primary screen).

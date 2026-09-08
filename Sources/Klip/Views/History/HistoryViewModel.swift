@@ -540,47 +540,45 @@ final class HistoryViewModel: ObservableObject {
     }
 
     /// Extend selection upward (Shift+↑ behavior)
-    ///
-    /// 5A-22: both ends go through `[safe:]`, like `navigateUp`/`navigateDown`
-    /// already did — an out-of-range `selectedIndex` returns instead of
-    /// trapping.
-    func extendSelectionUp() {
-        guard selectedIndex > 0 else { return }
-
-        guard let currentItem = filteredItems[safe: selectedIndex] else { return }
-        let previousIndex = selectedIndex - 1
-        guard let previousItem = filteredItems[safe: previousIndex] else { return }
-
-        if selectedIDs.isEmpty {
-            selectSingle(currentItem.id)
-            return
-        }
-
-        // If moving up, always include the new item
-        selectedIDs.insert(previousItem.id)
-        selectionAnchor = selectionAnchor ?? currentItem.id
-
-        selectedIndex = previousIndex
-    }
+    func extendSelectionUp() { extendSelection(by: -1) }
 
     /// Extend selection downward (Shift+↓ behavior)
-    func extendSelectionDown() {
-        guard selectedIndex < filteredItems.count - 1 else { return }
+    func extendSelectionDown() { extendSelection(by: 1) }
 
+    /// Shift+arrow selection the way Finder and Mail do it: the selection is
+    /// always the contiguous run between the anchor (where Shift was first
+    /// held) and the row the cursor is on now. Walking down five rows selects
+    /// five; walking back up over them deselects them again. The old version
+    /// only ever added rows, so there was no way to shrink a selection with
+    /// the keyboard.
+    ///
+    /// 5A-22: every index goes through `[safe:]`, like `navigateUp`/
+    /// `navigateDown` - an out-of-range `selectedIndex` returns instead of
+    /// trapping.
+    private func extendSelection(by step: Int) {
         guard let currentItem = filteredItems[safe: selectedIndex] else { return }
-        let nextIndex = selectedIndex + 1
-        guard let nextItem = filteredItems[safe: nextIndex] else { return }
 
         if selectedIDs.isEmpty {
             selectSingle(currentItem.id)
             return
         }
 
-        // If moving down, always include the new item
-        selectedIDs.insert(nextItem.id)
-        selectionAnchor = selectionAnchor ?? currentItem.id
+        let targetIndex = selectedIndex + step
+        guard filteredItems[safe: targetIndex] != nil else { return }
 
-        selectedIndex = nextIndex
+        // The anchor is wherever the run started. One that no longer exists
+        // in the list (its clip was deleted or filtered out) restarts the run
+        // at the current row.
+        var anchorIndex = selectionAnchor.flatMap { id in filteredItems.firstIndex { $0.id == id } }
+        if anchorIndex == nil {
+            selectionAnchor = currentItem.id
+            anchorIndex = selectedIndex
+        }
+        guard let anchorIndex else { return }
+
+        let range = min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)
+        selectedIDs = Set(filteredItems[range].map { $0.id })
+        selectedIndex = targetIndex
     }
 
     /// Clear all selections

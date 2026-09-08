@@ -36,6 +36,12 @@ final class ScrollCaptureSession: NSObject {
     /// Global AppKit rect (points) being captured.
     private let region: CGRect
 
+    /// The app the region sat over when the session started, credited on the
+    /// finished capture. Resolved once, up front: by the time the user presses
+    /// Done, the frontmost app is our own chrome.
+    private let sourceAppName: String?
+    private let sourceBundleID: String?
+
     /// `nil` = the session was cancelled or nothing was ever captured.
     var onFinished: ((CaptureResult?) -> Void)?
 
@@ -58,8 +64,10 @@ final class ScrollCaptureSession: NSObject {
 
     // MARK: - Lifecycle
 
-    init(region: CGRect) {
+    init(region: CGRect, sourceAppName: String? = nil, sourceBundleID: String? = nil) {
         self.region = region.standardized
+        self.sourceAppName = sourceAppName
+        self.sourceBundleID = sourceBundleID
         super.init()
     }
 
@@ -199,7 +207,9 @@ final class ScrollCaptureSession: NSObject {
             result = CaptureResult(image: stitcher.finish(),
                                    pixelScale: pixelScale,
                                    source: .scrolling,
-                                   screenRect: region)
+                                   screenRect: region,
+                                   sourceAppName: sourceAppName,
+                                   sourceBundleID: sourceBundleID)
         }
         teardown()
         onFinished?(result)

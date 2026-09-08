@@ -1,4 +1,5 @@
 import AppKit
+import BenchCore
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
@@ -96,15 +97,55 @@ nonisolated enum ImageExporter {
 
     /// Writes `image` to `url`; the format comes from the URL's extension and
     /// `quality` applies when that format is lossy.
+    ///
+    /// `sourceAppName` is the app the pixels came from; when it is known the
+    /// written file gets a "Where from" entry naming it, the way a download
+    /// records the site it came from.
     static func write(_ image: CGImage,
                       pixelScale: CGFloat,
                       to url: URL,
-                      quality: CGFloat = lossyQuality) throws {
+                      quality: CGFloat = lossyQuality,
+                      sourceAppName: String? = nil) throws {
         let format = format(forExtension: url.pathExtension)
         guard let data = data(image, pixelScale: pixelScale, format: format, quality: quality) else {
             throw CocoaError(.fileWriteUnknown)
         }
         try data.write(to: url, options: .atomic)
+        if let name = sourceAppName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            setWhereFrom([name], on: url)
+        }
+    }
+
+    // MARK: - Where from
+
+    /// The extended attribute Finder's Get Info reads for its "Where from" row.
+    static let whereFromsAttribute = "com.apple.metadata:kMDItemWhereFroms"
+
+    /// Writes `names` (typically one app name) to `url`'s "Where from"
+    /// metadata: a binary property list holding an array of strings, which is
+    /// exactly what Safari writes for a download and what Finder, `mdls` and
+    /// `xattr -p` read back.
+    ///
+    /// Best effort - a read-only volume or a file system without extended
+    /// attributes only logs.
+    static func setWhereFrom(_ names: [String], on url: URL) {
+        let cleaned = names
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !cleaned.isEmpty else { return }
+        guard let plist = try? PropertyListSerialization.data(fromPropertyList: cleaned,
+                                                             format: .binary,
+                                                             options: 0) else {
+            NSLog("Shot: could not encode Where from for %@", url.lastPathComponent)
+            return
+        }
+        let status = plist.withUnsafeBytes { buffer -> Int32 in
+            guard let base = buffer.baseAddress else { return -1 }
+            return setxattr(url.path, whereFromsAttribute, base, buffer.count, 0, 0)
+        }
+        if status != 0 {
+            NSLog("Shot: could not set Where from on %@ (errno %d)", url.lastPathComponent, errno)
+        }
     }
 
     // MARK: - Pasteboard
@@ -116,8 +157,17 @@ nonisolated enum ImageExporter {
     /// For jpeg it is the JPEG alone: adding a TIFF fallback would let every
     /// app that prefers TIFF paste a lossless image instead, which is the
     /// opposite of what choosing JPG asks for.
+    ///
+    /// When `sourceAppName` is known it rides along on the same item under
+    /// `SourceAppPasteboard.sourceAppNameType`, so Klip credits the captured
+    /// app instead of Bench - the frontmost app when the pasteboard changes is
+    /// our own overlay or editor window.
     @MainActor
-    static func copyToPasteboard(_ image: CGImage, pixelScale: CGFloat, format: ImageFormat = .png, quality: CGFloat = lossyQuality) {
+    static func copyToPasteboard(_ image: CGImage,
+                                 pixelScale: CGFloat,
+                                 format: ImageFormat = .png,
+                                 quality: CGFloat = lossyQuality,
+                                 sourceAppName: String? = nil) {
         let pb = NSPasteboard.general
         pb.clearContents()
         let item = NSPasteboardItem()
@@ -126,6 +176,9 @@ nonisolated enum ImageExporter {
         }
         if format == .png, let tiff = data(image, pixelScale: pixelScale, format: .tiff) {
             item.setData(tiff, forType: .tiff)
+        }
+        if let credit = SourceAppPasteboard.data(for: sourceAppName) {
+            item.setData(credit, forType: SourceAppPasteboard.sourceAppNameType)
         }
         pb.writeObjects([item])
     }
@@ -194,7 +247,7 @@ nonisolated enum ImageExporter {
 
     /// Writes a PNG into a dedicated temp subfolder for a drag-out, sweeping
     /// anything older than a day first.
-    static func writeDragTempFile(_ image: CGImage, pixelScale: CGFloat) throws -> URL {
+    static func writeDragTempFile(_ image: CGImage, pixelScale: CGFloat, sourceAppName: String? = nil) throws -> URL {
         let dir = dragDirectory
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         sweepDragDirectory()
@@ -202,7 +255,8 @@ nonisolated enum ImageExporter {
         let name = ScreenshotDefaults.filename(date: Date(),
                                                ext: "png",
                                                includeDate: true,
-                                               baseName: ScreenshotDefaults.baseName)
+                                               baseName: ScreenshotDefaults.sanitized(sourceAppName: sourceAppName)
+                                                   ?? ScreenshotDefaults.baseName)
         var url = dir.appendingPathComponent(name)
         if FileManager.default.fileExists(atPath: url.path) {
             let stem = (name as NSString).deletingPathExtension
@@ -213,7 +267,7 @@ nonisolated enum ImageExporter {
             } while FileManager.default.fileExists(atPath: url.path) && counter < 10_000
         }
 
-        try write(image, pixelScale: pixelScale, to: url)
+        try write(image, pixelScale: pixelScale, to: url, sourceAppName: sourceAppName)
         return url
     }
 

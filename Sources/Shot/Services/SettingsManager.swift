@@ -177,12 +177,13 @@ final class SettingsManager: ObservableObject {
         static let rememberLastTool = "rememberLastTool"
         static let playSound = "playCaptureSound"
         static let copyOnClose = "copyOnClose"
+        static let nameFilesAfterSourceApp = "nameFilesAfterSourceApp"
 
         /// Every key above, bare, in the order the Settings pane uses them.
         static let all: [String] = [
             dimensionsInPixels, includeWindowShadow, hotkeys, captureFormats, jpegQuality,
             variantModifiers, toolStyle, lastTool, keepToolActive, rememberLastTool,
-            playSound, copyOnClose,
+            playSound, copyOnClose, nameFilesAfterSourceApp,
         ]
 
         static func namespaced(_ key: String) -> String { prefix + key }
@@ -230,6 +231,10 @@ final class SettingsManager: ObservableObject {
     @Published var playCaptureSound: Bool { didSet { defaults.set(playCaptureSound, forKey: key(Key.playSound)) } }
     /// Copy the image to the clipboard when the overlay is closed with Escape (Shottr's copyOnEsc).
     @Published var copyOnClose: Bool { didSet { defaults.set(copyOnClose, forKey: key(Key.copyOnClose)) } }
+    /// Name saved files after the app that was captured ("IINA 2026-09-07 at
+    /// 14.03.10.png") instead of the macOS base name. On by default; only
+    /// affects files, never the clipboard credit.
+    @Published var nameFilesAfterSourceApp: Bool { didSet { defaults.set(nameFilesAfterSourceApp, forKey: key(Key.nameFilesAfterSourceApp)) } }
 
     private init() {
         let defaults = self.defaults
@@ -256,6 +261,7 @@ final class SettingsManager: ObservableObject {
         rememberLastTool = defaults.object(forKey: k(Key.rememberLastTool)) as? Bool ?? false
         playCaptureSound = defaults.object(forKey: k(Key.playSound)) as? Bool ?? true
         copyOnClose = defaults.object(forKey: k(Key.copyOnClose)) as? Bool ?? false
+        nameFilesAfterSourceApp = defaults.object(forKey: k(Key.nameFilesAfterSourceApp)) as? Bool ?? true
     }
 
     // MARK: - Snapper import

@@ -28,6 +28,9 @@ nonisolated enum ScreenshotDefaults {
     static let defaultBaseName = "Screenshot"
     static let defaultExtension = "png"
 
+    /// Longest app name we are willing to put in a file name.
+    static let maxSourceNameLength = 40
+
     /// macOS's own screenshot timestamp format. Deliberately locale-independent.
     static let dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
 
@@ -118,14 +121,43 @@ nonisolated enum ScreenshotDefaults {
         return "\(name) \(formatter.string(from: date)).\(suffix)"
     }
 
+    /// Turns an app's display name into something safe to use as the base of a
+    /// file name: no path separators, no ":" (Finder shows it as "/"), no
+    /// leading dots (that would hide the file), trimmed, and capped at
+    /// `maxSourceNameLength` characters. `nil` when nothing usable is left, so
+    /// the caller falls back to the macOS base name.
+    static func sanitized(sourceAppName raw: String?) -> String? {
+        guard let raw else { return nil }
+        var name = raw
+        for bad in ["/", ":"] { name = name.replacingOccurrences(of: bad, with: " ") }
+        name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        while name.hasPrefix(".") { name.removeFirst() }
+        name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.count > maxSourceNameLength {
+            name = String(name.prefix(maxSourceNameLength)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return name.isEmpty ? nil : name
+    }
+
     // MARK: - Destination
 
     /// The next free file URL in `directory` (default: the user's screenshot
     /// folder). Existing names get " (2)", " (3)"... appended, exactly like macOS.
-    static func nextFileURL(in directory: URL? = nil, ext: String? = nil, date: Date = Date()) -> URL {
+    ///
+    /// `sourceAppName` replaces the macOS base name when it is known and
+    /// usable, so a capture of IINA is saved as
+    /// "IINA 2026-09-07 at 14.03.10.png". Callers pass nil when the
+    /// "Name files after the captured app" setting is off.
+    static func nextFileURL(in directory: URL? = nil,
+                            ext: String? = nil,
+                            date: Date = Date(),
+                            sourceAppName: String? = nil) -> URL {
         let dir = directory ?? saveDirectory
         let suffix = parse(fileType: ext ?? fileType)
-        let base = filename(date: date, ext: suffix, includeDate: includeDate, baseName: baseName)
+        let base = filename(date: date,
+                            ext: suffix,
+                            includeDate: includeDate,
+                            baseName: sanitized(sourceAppName: sourceAppName) ?? baseName)
 
         var candidate = dir.appendingPathComponent(base)
         guard FileManager.default.fileExists(atPath: candidate.path) else { return candidate }

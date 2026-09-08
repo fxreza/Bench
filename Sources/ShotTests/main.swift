@@ -23,6 +23,7 @@ exit(MainActor.assumeIsolated {
         RendererTests.suite,
         HitTestingTests.suite,
         ScreenshotDefaultsTests.suite,
+        SourceAppTests.suite,
         CaptureFormatTests.suite,
         TextRecognizerTests.suite,
         ScrollStitcherTests.suite,

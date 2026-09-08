@@ -30,6 +30,15 @@ final class OverlayController {
     private var isPresenting = false
     private var windowCaptureInFlight = false
 
+    /// The app that was frontmost when this capture started - recorded before
+    /// any Bench panel is ordered front, because from then on the frontmost app
+    /// is us. A full-screen capture is credited to it; `nil` when it was Bench
+    /// itself, or the Finder showing nothing but the desktop.
+    private(set) var preOverlayApp: (name: String, bundleID: String?)?
+    /// The raw candidate, kept until `present()` can check it against the
+    /// on-screen window list.
+    private var preOverlayCandidate: NSRunningApplication?
+
     var isActive: Bool { !panels.isEmpty }
 
     init() {}
@@ -40,6 +49,7 @@ final class OverlayController {
     /// file format the shortcut that started this capture saves as; it rides
     /// along on the document the overlay produces.
     func begin(mode: Mode, format: CaptureFileFormat = .png) async {
+        recordFrontmostApp()
         await present(mode: mode, purpose: .capture, format: format)
     }
 
@@ -48,6 +58,7 @@ final class OverlayController {
     /// `completion` gets the global AppKit rect, or nil when cancelled.
     func selectRegion(completion: @escaping (CGRect?) -> Void) async {
         guard !isActive, !isPresenting else { completion(nil); return }
+        recordFrontmostApp()
         regionCompletion = completion
         await present(mode: .area, purpose: .region)
         if !isActive { finishRegion(nil) }   // presentation failed
@@ -58,6 +69,7 @@ final class OverlayController {
     /// opening an editor. `completion` gets nil when cancelled.
     func selectTextRegion(completion: @escaping (CGImage?) -> Void) async {
         guard !isActive, !isPresenting else { completion(nil); return }
+        recordFrontmostApp()
         textCompletion = completion
         await present(mode: .area, purpose: .text)
         if !isActive { finishText(nil) }   // presentation failed
@@ -113,6 +125,7 @@ final class OverlayController {
         guard !frozen.isEmpty else { return }
 
         let windows = purpose == .capture ? WindowEnumerator.onScreenWindows() : []
+        resolveFrontmostApp(knownWindows: purpose == .capture ? windows : nil)
         let mouse = NSEvent.mouseLocation
 
         for screen in frozen {
@@ -132,6 +145,35 @@ final class OverlayController {
         CaptureCursor.crosshair.set()
 
         if mode == .screen, purpose == .capture { key?.overlayView.selectWholeScreen() }
+    }
+
+    // MARK: - source app
+
+    /// Remembers who was frontmost before the overlay exists. Bench's own
+    /// process never counts.
+    private func recordFrontmostApp() {
+        preOverlayApp = nil
+        let app = NSWorkspace.shared.frontmostApplication
+        preOverlayCandidate = app?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : app
+    }
+
+    /// Turns the recorded candidate into a name, dropping the Finder when it
+    /// owns no on-screen window (it is "frontmost" whenever the user clicked
+    /// the desktop, which credits nothing).
+    private func resolveFrontmostApp(knownWindows: [WindowInfo]?) {
+        defer { preOverlayCandidate = nil }
+        guard let app = preOverlayCandidate else { preOverlayApp = nil; return }
+        if app.bundleIdentifier == "com.apple.finder" {
+            // Only enumerate when it is actually the Finder; every other app
+            // is credited without a second window-server round trip.
+            let windows = knownWindows ?? WindowEnumerator.onScreenWindows()
+            guard windows.contains(where: { $0.ownerPID == app.processIdentifier }) else {
+                preOverlayApp = nil
+                return
+            }
+        }
+        let name = (app.localizedName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        preOverlayApp = name.isEmpty ? nil : (name, app.bundleIdentifier)
     }
 
     private static func screen(for frozen: FrozenScreen) -> NSScreen? {
@@ -235,7 +277,9 @@ final class OverlayController {
             let result = view.captureResult ?? CaptureResult(image: document.image,
                                                              pixelScale: document.pixelScale,
                                                              source: .area,
-                                                             screenRect: view.globalSelectionRect)
+                                                             screenRect: view.globalSelectionRect,
+                                                             sourceAppName: document.sourceAppName,
+                                                             sourceBundleID: document.sourceBundleID)
             let open = onOpenInEditor
             cancel()
             open?(document, result)

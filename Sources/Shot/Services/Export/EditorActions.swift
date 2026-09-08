@@ -12,8 +12,17 @@ enum EditorActions {
         ImageExporter.copyToPasteboard(flattened(document),
                                        pixelScale: document.pixelScale,
                                        format: document.outputFormat?.imageFormat ?? .png,
-                                       quality: lossyQuality)
+                                       quality: lossyQuality,
+                                       sourceAppName: document.sourceAppName)
         playCaptureSound()
+    }
+
+    /// The app name a *file* should be credited to: the document's source, or
+    /// nil when "Name files after the captured app" is off. The clipboard
+    /// credit is deliberately not gated on that setting - it only fixes the
+    /// "From" row of a clipboard manager, it changes nothing in Finder.
+    static func fileSourceAppName(_ document: AnnotationDocument) -> String? {
+        SettingsManager.shared.nameFilesAfterSourceApp ? document.sourceAppName : nil
     }
 
     /// Puts recognized text on the clipboard as plain text. Nothing else is
@@ -34,12 +43,14 @@ enum EditorActions {
     /// pattern, in the format the capture shortcut asked for.
     @discardableResult
     static func save(_ document: AnnotationDocument) -> URL? {
-        let url = ScreenshotDefaults.nextFileURL(ext: document.outputFormat?.fileExtension)
+        let url = ScreenshotDefaults.nextFileURL(ext: document.outputFormat?.fileExtension,
+                                                 sourceAppName: fileSourceAppName(document))
         do {
             try ImageExporter.write(flattened(document),
                                     pixelScale: document.pixelScale,
                                     to: url,
-                                    quality: lossyQuality)
+                                    quality: lossyQuality,
+                                    sourceAppName: document.sourceAppName)
             playCaptureSound()
             return url
         } catch {
@@ -60,14 +71,19 @@ enum EditorActions {
         panel.allowedContentTypes = types
         panel.canCreateDirectories = true
         panel.directoryURL = ScreenshotDefaults.saveDirectory
-        panel.nameFieldStringValue = ScreenshotDefaults.nextFileURL(ext: document.outputFormat?.fileExtension).lastPathComponent
+        panel.nameFieldStringValue = ScreenshotDefaults
+            .nextFileURL(ext: document.outputFormat?.fileExtension,
+                         sourceAppName: fileSourceAppName(document))
+            .lastPathComponent
         let image = flattened(document)
         let scale = document.pixelScale
         let quality = lossyQuality
+        let sourceAppName = document.sourceAppName
         let handler: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let url = panel.url else { completion?(nil); return }
             do {
-                try ImageExporter.write(image, pixelScale: scale, to: url, quality: quality)
+                try ImageExporter.write(image, pixelScale: scale, to: url, quality: quality,
+                                        sourceAppName: sourceAppName)
                 playCaptureSound()
                 completion?(url)
             } catch {

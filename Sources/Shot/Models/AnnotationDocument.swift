@@ -31,6 +31,13 @@ final class AnnotationDocument {
     /// (a file opened from disk), which keep following the macOS screenshot
     /// `type` preference.
     var outputFormat: CaptureFileFormat?
+    /// Display name of the app the capture came from ("IINA", "Google Chrome"),
+    /// carried from `CaptureResult` all the way to Copy / Save. `nil` for
+    /// documents with no identifiable source (a clipboard edit, a dropped
+    /// image, a file opened from disk). Never Bench itself.
+    var sourceAppName: String?
+    /// Bundle identifier of that app, when known.
+    var sourceBundleID: String?
 
     /// Identifies the current gesture. `update(coalesce:)` only ever merges into
     /// an entry that was created inside the same group, so two separate drags of
@@ -39,10 +46,16 @@ final class AnnotationDocument {
     /// The group that owns `undoStack.last`, or -1 when nothing is coalescing.
     private var openCoalesceGroup: Int = -1
 
-    init(image: CGImage, pixelScale: CGFloat, outputFormat: CaptureFileFormat? = nil) {
+    init(image: CGImage,
+         pixelScale: CGFloat,
+         outputFormat: CaptureFileFormat? = nil,
+         sourceAppName: String? = nil,
+         sourceBundleID: String? = nil) {
         self.image = image
         self.pixelScale = max(1, pixelScale)
         self.outputFormat = outputFormat
+        self.sourceAppName = sourceAppName
+        self.sourceBundleID = sourceBundleID
     }
 
     /// Size in image points.

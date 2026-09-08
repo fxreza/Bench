@@ -282,18 +282,44 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         needsDisplay = true
     }
 
+    /// Stamps the app the pixels came from onto `result`.
+    ///
+    /// A whole-screen capture is credited to whoever was frontmost before the
+    /// overlay appeared (by then it is us); anything rubber-banded is credited
+    /// to the front-most window it overlaps the most. `windows` is empty for
+    /// the region and text pickers, so those credit nothing.
+    private func creditSourceApp(_ result: inout CaptureResult, globalRect: CGRect) {
+        switch result.source {
+        case .screen:
+            result.sourceAppName = controller?.preOverlayApp?.name
+            result.sourceBundleID = controller?.preOverlayApp?.bundleID
+        case .area:
+            let source = WindowEnumerator.source(for: globalRect, in: windows)
+            result.sourceAppName = source?.name
+            result.sourceBundleID = source?.bundleID
+        case .window, .scrolling, .file:
+            // Those already know exactly which app they came from.
+            break
+        }
+    }
+
     /// Crops the frozen bitmap to `rect` and enters the selected state.
     private func commitSelection(_ rect: CGRect) {
         let source: CaptureSource = mode == .screen ? .screen : .area
-        guard let result = ScreenCapturer.crop(frozen, localRect: localAppKitRect(rect), source: source),
+        guard var result = ScreenCapturer.crop(frozen, localRect: localAppKitRect(rect), source: source),
               let global = result.screenRect else {
             resetToIdle()
             return
         }
+        creditSourceApp(&result, globalRect: global)
         captureResult = result
         // No sound here: the shutter plays when the capture actually lands
         // somewhere - copied to the clipboard, or written to a file.
-        let doc = AnnotationDocument(image: result.image, pixelScale: result.pixelScale, outputFormat: outputFormat)
+        let doc = AnnotationDocument(image: result.image,
+                                     pixelScale: result.pixelScale,
+                                     outputFormat: outputFormat,
+                                     sourceAppName: result.sourceAppName,
+                                     sourceBundleID: result.sourceBundleID)
         document = doc
         selectionHistory = [0: viewRect(fromGlobal: global)]
         documentRect = viewRect(fromGlobal: global)
@@ -309,7 +335,11 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         captureResult = result
         // No sound here: the shutter plays when the capture actually lands
         // somewhere - copied to the clipboard, or written to a file.
-        let doc = AnnotationDocument(image: result.image, pixelScale: result.pixelScale, outputFormat: outputFormat)
+        let doc = AnnotationDocument(image: result.image,
+                                     pixelScale: result.pixelScale,
+                                     outputFormat: outputFormat,
+                                     sourceAppName: result.sourceAppName,
+                                     sourceBundleID: result.sourceBundleID)
         document = doc
         let rect = viewRect(fromGlobal: global)
         selectionHistory = [0: rect]
@@ -653,8 +683,12 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         // off the pixels they were drawn on.
         guard let doc = document, let old = documentRect ?? selection else { return }
         let source = captureResult?.source ?? .area
-        guard let result = ScreenCapturer.crop(frozen, localRect: localAppKitRect(newSelection), source: source),
+        guard var result = ScreenCapturer.crop(frozen, localRect: localAppKitRect(newSelection), source: source),
               let global = result.screenRect else { return }
+        // The selection may have been dragged onto a different app's window.
+        creditSourceApp(&result, globalRect: global)
+        doc.sourceAppName = result.sourceAppName
+        doc.sourceBundleID = result.sourceBundleID
         let snapped = viewRect(fromGlobal: global)
         var moved = doc.annotations
         let dx = old.minX - snapped.minX

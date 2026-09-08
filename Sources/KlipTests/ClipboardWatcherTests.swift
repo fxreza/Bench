@@ -21,6 +21,9 @@ enum ClipboardWatcherTests {
         ("capture_textClipIsStoredAndClassified", testTextCapture),
         ("capture_consecutiveDuplicateIsSkipped", testDuplicateSkipped),
         ("capture_largeTextIsFileBackedAndDoesNotBlockTheCaller", testLargeTextCapture),
+        ("ownWrite_flagRaisedBeforeAWriteSkipsThatWriteOnly", testOwnWriteSkipped),
+        ("ownWrite_staleFlagDoesNotSwallowTheNextClip", testStaleFlagIgnored),
+        ("ownWrite_flagRaisedAfterTheWriteWasConsumedCannotEatALaterClip", testLateFlagCannotEatLaterClip),
     ]
 
     // MARK: - Harness
@@ -125,6 +128,68 @@ enum ClipboardWatcherTests {
             try expectEqual(item.textContent?.count, 500, "the inline preview is still 500 chars")
             try expectEqual(store.fullText(for: item)?.utf8.count, text.utf8.count,
                             "the full text round-trips through the backing file")
+        }
+    }
+
+    // MARK: - Own writes (the lost-screenshot bug)
+
+    /// What every Klip paste/copy path does: raise the flag, then write.
+    private static func raiseOwnWriteFlag() {
+        NotificationCenter.default.post(name: .bufferIgnoreNextChange, object: nil)
+    }
+
+    static func testOwnWriteSkipped() throws {
+        try withWatcher { watcher, store, pasteboard in
+            raiseOwnWriteFlag()
+            write("pasted from history", to: pasteboard)
+            watcher.capture(from: pasteboard)
+            pump(timeout: 0.3) { !store.items.isEmpty }
+            try expectEqual(store.items.count, 0, "Klip's own write must not become a clip")
+
+            // The flag was spent on that write; the next change is a real clip.
+            write("a real copy", to: pasteboard)
+            watcher.capture(from: pasteboard)
+            try expect(pump { store.items.count == 1 }, "the following real clip must be captured")
+            try expectEqual(store.items[0].textContent, "a real copy")
+        }
+    }
+
+    static func testStaleFlagIgnored() throws {
+        try withWatcher { watcher, store, pasteboard in
+            var clock = Date()
+            watcher.now = { clock }
+
+            // A flag raised, then no pasteboard change for longer than the
+            // window: it cannot belong to a write that is still coming.
+            raiseOwnWriteFlag()
+            clock = clock.addingTimeInterval(watcher.ownWriteWindow + 1)
+
+            write("screenshot", to: pasteboard)
+            watcher.capture(from: pasteboard)
+            try expect(pump { store.items.count == 1 }, "a stale flag must not swallow a real clip")
+        }
+    }
+
+    /// The exact sequence that lost screenshots: flag, write, poll (flag
+    /// spent), a second flag raised 100 ms later with no write behind it,
+    /// then the user's next capture.
+    static func testLateFlagCannotEatLaterClip() throws {
+        try withWatcher { watcher, store, pasteboard in
+            var clock = Date()
+            watcher.now = { clock }
+
+            raiseOwnWriteFlag()
+            write("pasted from history", to: pasteboard)
+            watcher.capture(from: pasteboard)          // poll lands: flag spent
+
+            clock = clock.addingTimeInterval(0.1)
+            raiseOwnWriteFlag()                        // the late post, nothing written
+
+            clock = clock.addingTimeInterval(watcher.ownWriteWindow + 0.5)   // user takes a screenshot later
+            write("screenshot", to: pasteboard)
+            watcher.capture(from: pasteboard)
+            try expect(pump { store.items.count == 1 }, "the screenshot must be captured")
+            try expectEqual(store.items[0].textContent, "screenshot")
         }
     }
 }

@@ -83,14 +83,23 @@ final class CaptureCoordinator {
         Task {
             await OverlayController.shared.selectRegion { [weak self] rect in
                 guard let self, let rect else { return }
-                let session = ScrollCaptureSession(region: rect)
+                // Same rule as an area capture, evaluated once against the
+                // region the user just picked - the overlay is already gone,
+                // and by the time the session finishes the front-most window
+                // is our own scrolling chrome.
+                let source = WindowEnumerator.source(for: rect, in: WindowEnumerator.onScreenWindows())
+                let session = ScrollCaptureSession(region: rect,
+                                                   sourceAppName: source?.name,
+                                                   sourceBundleID: source?.bundleID)
                 session.onFinished = { [weak self] result in
                     self?.scrollSession = nil
                     guard let result else { return }
                     EditorWindowController.open(image: result.image,
                                                 pixelScale: result.pixelScale,
                                                 title: Self.title(for: .scrolling),
-                                                outputFormat: format)
+                                                outputFormat: format,
+                                                sourceAppName: result.sourceAppName,
+                                                sourceBundleID: result.sourceBundleID)
                 }
                 self.scrollSession = session
                 session.present()

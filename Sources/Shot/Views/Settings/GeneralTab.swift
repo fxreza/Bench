@@ -19,6 +19,12 @@ struct GeneralTab: View {
                 Toggle("Play capture sound", isOn: $settings.playCaptureSound)
                 Toggle("Include window shadow when capturing windows", isOn: $settings.includeWindowShadow)
                 Toggle("Copy image to clipboard when closing with Escape", isOn: $settings.copyOnClose)
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Name files after the captured app", isOn: $settings.nameFilesAfterSourceApp)
+                    Text("IINA 2026-09-07 at 14.03.10.png instead of Screenshot 2026-…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Picker("Show sizes in", selection: dimensionsBinding) {
                     Text("Pixels").tag(true)
                     Text("Points").tag(false)

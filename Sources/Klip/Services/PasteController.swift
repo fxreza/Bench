@@ -187,11 +187,15 @@ class PasteController {
             writeFileURLs(for: [item], store: store, to: pasteboard)
         }
 
-        // Reactivate previous app, then simulate paste after it has focus
+        // Reactivate previous app, then simulate paste after it has focus.
+        //
+        // No `.bufferIgnoreNextChange` here: the caller raised it before the
+        // write above, and ⌘V itself never changes the pasteboard. Posting it
+        // again after the write used to leave a stale flag whenever the
+        // watcher's poll had already consumed the first one, and the next
+        // real clip (typically a screenshot) was then silently dropped.
         bringForward(previousApp)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            // Post ignore notification right before paste
-            NotificationCenter.default.post(name: .bufferIgnoreNextChange, object: nil)
             simulatePaste()
         }
     }
@@ -221,10 +225,10 @@ class PasteController {
         func writeURLBatchAndPaste() {
             // 5A-21: tell the watcher to ignore this change *before* the
             // pasteboard is written, exactly as the single-item path does.
-            // `simulatePasteWithCustomDelay` posts the same flag, but only
-            // 50 ms later — and the watcher polls every 500 ms, so a poll
-            // landing in that window captured the app's own paste as a new
-            // (text) clip.
+            // This is the only flag for this write: the caller's flag was
+            // spent on the text write above (or on nothing, if there was no
+            // text, in which case it is still pending and this post is a
+            // no-op).
             NotificationCenter.default.post(name: .bufferIgnoreNextChange, object: nil)
             pasteboard.clearContents()
 
@@ -310,11 +314,14 @@ class PasteController {
         keyUp?.post(tap: .cgAnnotatedSessionEventTap)
     }
     
-    /// Simulate Command + V keystroke with custom delay
+    /// Simulate Command + V keystroke with custom delay.
+    ///
+    /// Deliberately posts no `.bufferIgnoreNextChange`: every pasteboard
+    /// write in this file is preceded by its own flag, and a flag raised
+    /// after the write is exactly the stale one that swallowed the user's
+    /// next screenshot (see `paste(_:store:previousApp:mode:)`).
     private static func simulatePasteWithCustomDelay(_ delay: TimeInterval) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            // Post ignore notification right before paste
-            NotificationCenter.default.post(name: .bufferIgnoreNextChange, object: nil)
             simulatePaste()
         }
     }

@@ -26,6 +26,8 @@ exit(MainActor.assumeIsolated {
         ("KeyMonitorTests", KeyMonitorTests.tests),
         ("ContentDetectorTests", ContentDetectorTests.tests),
         ("ClipboardWatcherTests", ClipboardWatcherTests.tests),
+        ("SourceAppCreditTests", SourceAppCreditTests.tests),
+        ("SelectionTests", SelectionTests.tests),
         ("ImageFormatTests", ImageFormatTests.tests),
         ("LockTests", LockTests.tests),
         ("FileClipTests", FileClipTests.tests),

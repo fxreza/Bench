@@ -128,6 +128,8 @@ final class DragHandleView: NSView, NSDraggingSource {
 
     /// Supplies the image to drag (flattened) and its pixel scale.
     var imageProvider: (() -> (CGImage, CGFloat)?)?
+    /// Supplies the app the image was captured from, if known.
+    var sourceAppNameProvider: (() -> String?)?
 
     private var mouseDownPoint: NSPoint?
     private var hovered = false { didSet { needsDisplay = true } }
@@ -173,7 +175,10 @@ final class DragHandleView: NSView, NSDraggingSource {
 
     private func beginDrag(with event: NSEvent) {
         guard let (image, scale) = imageProvider?() else { return }
-        guard let url = try? ImageExporter.writeDragTempFile(image, pixelScale: scale) else { return }
+        let sourceAppName = sourceAppNameProvider?()
+        guard let url = try? ImageExporter.writeDragTempFile(image,
+                                                             pixelScale: scale,
+                                                             sourceAppName: sourceAppName) else { return }
 
         let pointSize = NSSize(width: CGFloat(image.width) / max(1, scale), height: CGFloat(image.height) / max(1, scale))
         let preview = NSImage(cgImage: image, size: pointSize)
@@ -299,6 +304,9 @@ protocol EditorToolbarDelegate: AnyObject {
     func toolbarDidSelectZoom(_ toolbar: EditorToolbarView, zoom: CGFloat?)
     /// The flattened image + pixel scale for the ⠿ drag handle.
     func toolbarDragImage(_ toolbar: EditorToolbarView) -> (CGImage, CGFloat)?
+    /// The app the dragged image was captured from, for the temp file's name
+    /// and its "Where from" metadata. nil credits nothing.
+    func toolbarDragSourceAppName(_ toolbar: EditorToolbarView) -> String?
 }
 
 /// The 44pt strip at the top of the editor window. A plain `NSView`, not an
@@ -349,6 +357,7 @@ final class EditorToolbarView: NSView {
         undoButton.onClick = { [weak self] in guard let self else { return }; self.delegate?.toolbarDidTapUndo(self) }
         redoButton.onClick = { [weak self] in guard let self else { return }; self.delegate?.toolbarDidTapRedo(self) }
         dragHandle.imageProvider = { [weak self] in self.flatMap { $0.delegate?.toolbarDragImage($0) } }
+        dragHandle.sourceAppNameProvider = { [weak self] in self.flatMap { $0.delegate?.toolbarDragSourceAppName($0) } }
 
         leftStack.orientation = .horizontal
         leftStack.alignment = .centerY

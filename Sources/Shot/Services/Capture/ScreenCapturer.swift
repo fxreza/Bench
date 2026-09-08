@@ -265,19 +265,27 @@ final class ScreenCapturer {
 
         let image = try await Self.captureImage(filter: filter, configuration: config)
 
+        // A window capture knows exactly which app it took: the window's own
+        // owner. Preferred over the frontmost app, which by now is our overlay.
+        let appName = WindowEnumerator.sourceAppName(for: window)
+        let bundleID = WindowEnumerator.sourceBundleID(for: window)
+
         guard includeShadow else {
-            return CaptureResult(image: image, pixelScale: scale, source: .window, screenRect: window.frame)
+            return CaptureResult(image: image, pixelScale: scale, source: .window, screenRect: window.frame,
+                                 sourceAppName: appName, sourceBundleID: bundleID)
         }
 
         let insets = Self.shadowInsets
         guard let shadowed = Self.drawShadow(image, pixelScale: scale) else {
-            return CaptureResult(image: image, pixelScale: scale, source: .window, screenRect: window.frame)
+            return CaptureResult(image: image, pixelScale: scale, source: .window, screenRect: window.frame,
+                                 sourceAppName: appName, sourceBundleID: bundleID)
         }
         let expanded = CGRect(x: window.frame.origin.x - insets.left,
                               y: window.frame.origin.y - insets.bottom,
                               width: window.frame.width + insets.left + insets.right,
                               height: window.frame.height + insets.top + insets.bottom)
-        return CaptureResult(image: shadowed, pixelScale: scale, source: .window, screenRect: expanded)
+        return CaptureResult(image: shadowed, pixelScale: scale, source: .window, screenRect: expanded,
+                             sourceAppName: appName, sourceBundleID: bundleID)
     }
 
     /// Draws `image` onto a transparent canvas padded by `shadowInsets` with a

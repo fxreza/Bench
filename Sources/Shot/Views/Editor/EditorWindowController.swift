@@ -78,8 +78,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate,
     static func open(image: CGImage,
                      pixelScale: CGFloat,
                      title: String,
-                     outputFormat: CaptureFileFormat? = nil) -> EditorWindowController {
-        open(document: AnnotationDocument(image: image, pixelScale: pixelScale, outputFormat: outputFormat), title: title)
+                     outputFormat: CaptureFileFormat? = nil,
+                     sourceAppName: String? = nil,
+                     sourceBundleID: String? = nil) -> EditorWindowController {
+        open(document: AnnotationDocument(image: image,
+                                          pixelScale: pixelScale,
+                                          outputFormat: outputFormat,
+                                          sourceAppName: sourceAppName,
+                                          sourceBundleID: sourceBundleID),
+             title: title)
     }
 
     /// Opens an image file in a new editor window. Returns nil if it cannot be decoded.
@@ -463,5 +470,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate,
 
     func toolbarDragImage(_ toolbar: EditorToolbarView) -> (CGImage, CGFloat)? {
         (EditorActions.flattened(annotationDocument), annotationDocument.pixelScale)
+    }
+
+    func toolbarDragSourceAppName(_ toolbar: EditorToolbarView) -> String? {
+        // Follows the same setting as Save: with it off, a dragged-out file
+        // keeps the plain "Screenshot ..." name and credits no app.
+        EditorActions.fileSourceAppName(annotationDocument)
     }
 }
