@@ -375,7 +375,7 @@ enum BundledResourceTests {
         ("the mediaremote adapter is inside the module bundle", {
             guard let paths = MediaRemoteAdapter.paths else {
                 throw TestFailure(
-                    message: "mediaremote-adapter not found in Bundle.module", file: #file, line: #line)
+                    message: "mediaremote-adapter not found in Bench_Piko.bundle", file: #file, line: #line)
             }
             try expectEqual(paths.script.lastPathComponent, "mediaremote-adapter.pl")
             try expectEqual(paths.framework.lastPathComponent, "MediaRemoteAdapter.framework")

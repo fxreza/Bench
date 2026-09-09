@@ -64,6 +64,19 @@ enum ContactFilterTests {
             try expectEqual(filter.update(contacts: two), .empty)
         }),
 
+        ("contacts at startInRange are counted", {
+            // The driver parks a pressing finger at `startInRange` and leaves
+            // it there; excluding the stage is what made a three-finger click
+            // report two. See `ContactFilter.Stage.isDown`.
+            var filter = ContactFilter()
+            let fingers = [
+                contact(1, 0, 0, stage: .startInRange),
+                contact(2, 30, 0, stage: .touching),
+                contact(3, 60, 0, stage: .makeTouch),
+            ]
+            try expectEqual(filter.update(contacts: fingers).fingerCount, 3)
+        }),
+
         ("hovering contacts are not counted", {
             var filter = ContactFilter()
             let fingers = [

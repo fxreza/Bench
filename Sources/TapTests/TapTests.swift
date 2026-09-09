@@ -154,6 +154,43 @@ enum SettingsTests {
             }
         }),
 
+        ("fn+click is on by default", {
+            try withDefaults { defaults in
+                try expect(TapSettings(defaults: defaults).fnClickEnabled, "fn+click defaults on")
+            }
+        }),
+
+        ("fn+click round-trips through defaults", {
+            try withDefaults { defaults in
+                for value in [false, true] {
+                    TapSettings(defaults: defaults).fnClickEnabled = value
+                    try expectEqual(defaults.bool(forKey: TapSettings.Key.fnClick), value)
+                    try expectEqual(TapSettings(defaults: defaults).fnClickEnabled, value)
+                }
+            }
+        }),
+
+        ("the triggers are independent", {
+            // Every combination has to be reachable, which is why fn+click is
+            // its own switch and not a fifth `MiddleClickMode`.
+            let fnOnly = MiddleClickTriggers(mode: .off, fnClick: true)
+            try expect(!fnOnly.convertsClick, "fn only converts no three-finger click")
+            try expect(!fnOnly.detectsTap, "fn only watches no tap")
+            try expect(fnOnly.needsEventTap, "fn only still needs the event tap")
+
+            let fingersOnly = MiddleClickTriggers(mode: .both, fnClick: false)
+            try expect(fingersOnly.convertsClick, "fingers only converts clicks")
+            try expect(fingersOnly.detectsTap, "fingers only watches taps")
+            try expect(fingersOnly.needsEventTap, "fingers only needs the event tap")
+
+            let all = MiddleClickTriggers(mode: .both, fnClick: true)
+            try expect(all.convertsClick && all.detectsTap && all.needsEventTap, "all on")
+
+            let none = MiddleClickTriggers(mode: .off, fnClick: false)
+            try expect(none.isOff, "nothing on")
+            try expect(!none.needsEventTap, "nothing on installs no event tap")
+        }),
+
         ("an unknown stored value falls back to the default", {
             try withDefaults { defaults in
                 defaults.set("sideways", forKey: TapSettings.Key.middleClickMode)

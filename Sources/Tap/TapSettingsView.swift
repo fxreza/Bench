@@ -1,7 +1,7 @@
 import SwiftUI
 import BenchCore
 
-/// Tap's pane: the mode picker, what each mode means, and the two things that
+/// Tap's pane: the two triggers, what each one means, and the two things that
 /// can stop the module working (no Accessibility, no multitouch device).
 struct TapSettingsView: View {
     @ObservedObject private var settings = TapSettings.shared
@@ -18,6 +18,12 @@ struct TapSettingsView: View {
                 .disabled(!status.isAvailable)
 
                 Text(explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Toggle("Hold fn and click", isOn: $settings.fnClickEnabled)
+
+                Text(fnExplanation)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -42,15 +48,8 @@ struct TapSettingsView: View {
 
             Section {
                 Text("""
-                    If BetterTouchTool is still running with its own "3 finger click → middle click" trigger, \
-                    turn that trigger off. Both would fire and the app under the pointer would get two middle \
-                    clicks.
-                    """)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("""
-                    A middle click can be dragged: hold the three-finger click and move, and the drag arrives \
-                    as a middle-button drag even after fingers come off the pad.
+                    A middle click can be dragged: hold the click - three fingers or fn - and move, and the \
+                    drag arrives as a middle-button drag even after the fingers come off the pad.
                     """)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -59,10 +58,20 @@ struct TapSettingsView: View {
         .formStyle(.grouped)
     }
 
+    private var fnExplanation: String {
+        settings.fnClickEnabled
+            ? "Hold fn and click normally, with one finger. Nothing is counted, so this works "
+                + "whenever the three-finger gesture does not. fn is free to use: ⌘, ⇧, ⌥ and ⌃ "
+                + "all mean something else on a click already."
+            : "fn and a click are left alone."
+    }
+
     private var explanation: String {
         switch settings.mode {
         case .off:
-            return "Three-finger gestures are left to macOS."
+            return settings.fnClickEnabled
+                ? "Three-finger gestures are left to macOS; fn and a click still send a middle click."
+                : "Three-finger gestures are left to macOS."
         case .click:
             return "Press the trackpad down with three fingers on it. The left click is replaced, not added to."
         case .tap:

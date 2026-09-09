@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 (2026-09-08)
+
+### Added
+
+- Tap: hold fn and click normally for a middle click, on by default and independent of the three-finger triggers, so any combination of the three can be on. It counts no fingers, so it works whenever the trackpad gesture will not; fn is the one modifier a click has spare, with Command, Shift, Option and Control all meaning something already.
+- Tap: a three-finger click that the trackpad driver reports as a two-finger secondary click is converted too, instead of passing through and opening a context menu.
+
+### Fixed
+
+- Bench no longer quits at launch on any Mac other than the one it was built on. Piko looked up its now-playing resources through SwiftPM's generated `Bundle.module`, which trapped when neither the app root nor the build machine's build directory held the bundle; the lookup now returns nil and only turns now playing off.
+
 ## 0.2.0 (2026-09-08)
 
 ### Added

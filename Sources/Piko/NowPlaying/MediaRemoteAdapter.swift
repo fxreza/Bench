@@ -1,4 +1,5 @@
 import Foundation
+import BenchCore
 
 // The MediaRemote framework stopped answering "what is playing" for unentitled
 // processes in macOS 15.4. The workaround (ungive/mediaremote-adapter, see
@@ -10,8 +11,12 @@ import Foundation
 // `Bench_Piko.bundle/Contents/Resources/Resources/MediaRemoteAdapter/`
 // (`Package.swift` declares `.copy("Resources")`, so the source folder name
 // `Resources` is itself part of the path). They are never linked against: the
-// framework is only passed to the script as a path. The module bundle is the
-// only source — there is no `/Applications` or `Bundle.main` fallback.
+// framework is only passed to the script as a path.
+//
+// The bundle is located with `ResourceBundle.named`, not SwiftPM's generated
+// `Bundle.module`: that one looks at the `.app` root and then at the build
+// directory of the machine that compiled the app, and traps when neither
+// exists, which killed Bench at launch on every Mac but the build machine.
 
 // MARK: - Resource lookup
 
@@ -30,9 +35,13 @@ enum MediaRemoteAdapter {
     /// missing (now playing is then simply off; playback control still works
     /// through `MediaRemoteBridge`).
     static let paths: Paths? = {
-        guard let script = Bundle.module.url(
+        guard let bundle = ResourceBundle.named("Bench_Piko") else {
+            Log.media.error("Bench_Piko.bundle not found next to the executable; now playing disabled")
+            return nil
+        }
+        guard let script = bundle.url(
             forResource: "mediaremote-adapter", withExtension: "pl", subdirectory: subdirectory),
-            let framework = Bundle.module.url(
+            let framework = bundle.url(
                 forResource: "MediaRemoteAdapter", withExtension: "framework", subdirectory: subdirectory)
         else {
             Log.media.error("mediaremote-adapter resources not found in the module bundle; now playing disabled")

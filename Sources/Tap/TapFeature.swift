@@ -5,9 +5,10 @@ import BenchCore
 
 /// Trackpad gestures that turn into mouse buttons.
 ///
-/// One gesture so far, the last BetterTouchTool trigger this Mac still needed:
-/// **three fingers on the trackpad become the middle mouse button**, either by
-/// clicking with three fingers down or by tapping with three fingers, or both.
+/// The last BetterTouchTool trigger this Mac still needed: **a middle mouse
+/// button**, from three fingers on the trackpad - clicking with three down,
+/// tapping with three, or both - and from **fn and an ordinary click**. The
+/// triggers are independent, so any combination of them can be on.
 ///
 /// How it works, in two independent pieces:
 ///
@@ -62,16 +63,22 @@ public final class TapFeature: BenchFeature {
         TapStatus.shared.accessibilityMissing = false
         isRunning = true
 
-        guard engine.start(mode: settings.mode) else {
+        guard engine.start(triggers: settings.triggers) else {
             TapStatus.shared.unavailableReason = engine.unavailableReason
                 ?? "The trackpad could not be watched on this Mac."
             return
         }
         TapStatus.shared.unavailableReason = nil
 
+        // Both switches feed one `apply`: the engine wants the whole picture,
+        // not whichever half changed.
         settings.$mode
             .dropFirst()
-            .sink { [weak self] mode in self?.engine.apply(mode: mode) }
+            .sink { [weak self] _ in self?.applyTriggers() }
+            .store(in: &cancellables)
+        settings.$fnClickEnabled
+            .dropFirst()
+            .sink { [weak self] _ in self?.applyTriggers() }
             .store(in: &cancellables)
 
         // Trackpads come back as new devices after sleep; the callback
@@ -80,6 +87,16 @@ public final class TapFeature: BenchFeature {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.engine.handleWake() }
+        }
+    }
+
+    /// `@Published` fires inside `willSet`, so the new value is not on
+    /// `settings` yet when the sink runs; a hop to the next turn of the loop
+    /// reads the settled pair.
+    private func applyTriggers() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            engine.apply(triggers: settings.triggers)
         }
     }
 

@@ -13,6 +13,7 @@ final class TapSettings: ObservableObject {
 
     enum Key {
         static let middleClickMode = "tap.middleClickMode"
+        static let fnClick = "tap.fnClick"
     }
 
     /// What counts as a middle click. The raw values are persisted, so they
@@ -49,13 +50,60 @@ final class TapSettings: ObservableObject {
         didSet { defaults.set(mode.rawValue, forKey: Key.middleClickMode) }
     }
 
+    /// Whether holding **fn** and clicking normally is also a middle click.
+    ///
+    /// Independent of `mode` on purpose: the two triggers answer different
+    /// problems. Three fingers is the fast one, but it rests on the trackpad
+    /// driver agreeing that three fingers are down, and on this Mac it
+    /// sometimes will not (see `ContactFilter.Stage.isDown`). fn+click counts
+    /// nothing - one finger, one key - so it cannot misfire that way.
+    ///
+    /// fn is the modifier with nothing to lose: macOS and the browsers spend
+    /// ⌘ (new tab), ⇧ (new window), ⌥ (download) and ⌃ (secondary click) on a
+    /// click already, and rewriting any of those would take a behaviour away.
+    /// Nothing claims fn+click, so this only adds one.
+    ///
+    /// On by default. It conflicts with nothing, and it is the trigger that
+    /// works when the trackpad will not cooperate.
+    @Published var fnClickEnabled: Bool {
+        didSet { defaults.set(fnClickEnabled, forKey: Key.fnClick) }
+    }
+
+    /// The settings as the engine wants them.
+    var triggers: MiddleClickTriggers {
+        MiddleClickTriggers(mode: mode, fnClick: fnClickEnabled)
+    }
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = BenchDefaults.standard) {
         self.defaults = defaults
         let stored = defaults.string(forKey: Key.middleClickMode)
         mode = stored.flatMap(MiddleClickMode.init(rawValue:)) ?? .default
+        fnClickEnabled = defaults.object(forKey: Key.fnClick) as? Bool ?? true
     }
+}
+
+/// Everything that can produce a middle click, resolved from the settings.
+///
+/// The trackpad gesture and fn+click are separate switches rather than more
+/// cases on `MiddleClickMode`, so every combination is reachable: both, one,
+/// the other, or neither.
+struct MiddleClickTriggers: Equatable {
+    var mode: TapSettings.MiddleClickMode
+    var fnClick: Bool
+
+    /// Whether a physical click with three fingers down is rewritten.
+    var convertsClick: Bool { mode.convertsClick }
+    /// Whether the quick three-finger touch is watched for.
+    var detectsTap: Bool { mode.detectsTap }
+    /// Whether anything at all is on.
+    var isOff: Bool { mode == .off && !fnClick }
+
+    /// Whether the event tap has to be installed. Needed for either click
+    /// conversion, and in `tap` mode as well - a physical click there has to
+    /// cancel the pending tap gesture.
+    var needsEventTap: Bool { !isOff }
 }
 
 /// Why Tap cannot work on this Mac, if it cannot. Published separately from

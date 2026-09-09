@@ -14,8 +14,9 @@ import Foundation
 /// contacts that merely hover above the glass are counted as if they were
 /// touching it. The filter takes each in turn:
 ///
-/// 1. **Stage.** Only contacts in the `makeTouch` or `touching` stage count.
-///    Hovering, lingering and lifting contacts are dropped.
+/// 1. **Stage.** Only contacts in the `startInRange`, `makeTouch` or
+///    `touching` stage count. Hovering, lingering and lifting contacts are
+///    dropped. See `Stage.isDown` for why the first of those is in the list.
 /// 2. **Size.** A contact whose ellipse major axis is longer than
 ///    `Config.maxFingerAxis`, or whose total contact size is above
 ///    `Config.maxFingerSize`, is a palm, a thumb pad or the thenar (the
@@ -71,8 +72,26 @@ nonisolated struct ContactFilter {
         case lingerInRange = 6
         case outOfRange = 7
 
-        /// Whether a contact in this stage is pressing the glass.
-        var isDown: Bool { self == .makeTouch || self == .touching }
+        /// Whether a contact in this stage is on the glass.
+        ///
+        /// `startInRange` counts. It reads like a "not yet touching" stage,
+        /// and treating it as one is why a three-finger click so often came
+        /// out as two: on this Mac's pad the driver parks a finger there and
+        /// leaves it, for seconds at a time, while the finger is pressing as
+        /// hard as its neighbours. A capture of 35 three-contact frames
+        /// (`tap.logContacts`, 2026-09-08) reported three fingers in 4 of
+        /// them; every miss was a contact sitting at `startInRange`, none was
+        /// a size rejection, and counting the stage takes the same capture to
+        /// 29 of 35 with no frame of one or two contacts ever reading as
+        /// three. Palm rejection is unaffected - that is the size and cluster
+        /// work below, not this flag.
+        ///
+        /// `hoverInRange` is still out: it is the one stage that honestly
+        /// means "above the glass", and admitting it bought one extra frame
+        /// out of the 35.
+        var isDown: Bool {
+            self == .startInRange || self == .makeTouch || self == .touching
+        }
     }
 
     /// The parts of one `MTTouch` the filter reads.
