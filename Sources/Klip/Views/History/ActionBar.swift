@@ -88,8 +88,8 @@ struct ActionBar: View {
                 withAnimation(Theme.selectionSpring) { viewModel.toggleSidebar() }
             } label: {
                 Image(systemName: "sidebar.left")
-                    .font(Theme.icon(13))
-                    .foregroundStyle(settings.sidebarCollapsed ? Color.secondary : Theme.accent)
+                    .font(Theme.icon(13, weight: Theme.iconWeight(enabled: true)))
+                    .foregroundStyle(settings.sidebarCollapsed ? Theme.iconIdle : Theme.accent)
             }
             .buttonStyle(.plain)
             .klipHelp(settings.sidebarCollapsed ? "Show sidebar" : "Hide sidebar")
@@ -98,8 +98,8 @@ struct ActionBar: View {
                 withAnimation(Theme.selectionSpring) { viewModel.togglePreviewPane() }
             } label: {
                 Image(systemName: "sidebar.right")
-                    .font(Theme.icon(13))
-                    .foregroundStyle(settings.showPreviewPane ? Theme.accent : Color.secondary)
+                    .font(Theme.icon(13, weight: Theme.iconWeight(enabled: true)))
+                    .foregroundStyle(settings.showPreviewPane ? Theme.accent : Theme.iconIdle)
             }
             .buttonStyle(.plain)
             .klipHelp(settings.showPreviewPane ? "Hide preview" : "Show preview")
@@ -116,8 +116,8 @@ struct ActionBar: View {
                 // toggles beside it read. A second glyph for "on"
                 // (`macwindow.badge.plus`) looked like "new window".
                 Image(systemName: "macwindow")
-                    .font(Theme.icon(13))
-                    .foregroundStyle(settings.keepWindowOpen ? Theme.accent : Color.secondary)
+                    .font(Theme.icon(13, weight: Theme.iconWeight(enabled: true)))
+                    .foregroundStyle(settings.keepWindowOpen ? Theme.accent : Theme.iconIdle)
             }
             .buttonStyle(.plain)
             .klipHelp(

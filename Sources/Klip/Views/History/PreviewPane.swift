@@ -197,13 +197,13 @@ struct PreviewPane: View {
                 viewModel.restore(item)
             }
 
-            iconButton("doc.on.doc", tint: .secondary, help: "Copy") {
+            iconButton("doc.on.doc", tint: Theme.iconIdle, help: "Copy") {
                 viewModel.copy(item)
             }
 
             iconButton(
                 "trash.slash",
-                tint: .secondary,
+                tint: Theme.iconIdle,
                 help: "Delete permanently (\(ShortcutManager.shared.displayString(for: .delete)))"
             ) {
                 viewModel.requestPurge(ids: [item.id])
@@ -232,7 +232,7 @@ struct PreviewPane: View {
         return HStack(spacing: 12) {
             iconButton(
                 "square.and.pencil",
-                tint: viewModel.isEditing ? Theme.accent : .secondary,
+                tint: viewModel.isEditing ? Theme.accent : Theme.iconIdle,
                 help: !item.isEditable
                     ? "Only text clips can be edited"
                     : viewModel.isEditing
@@ -241,7 +241,7 @@ struct PreviewPane: View {
                 enabled: item.isEditable
             ) { viewModel.toggleEditMode() }
 
-            iconButton("doc.on.doc", tint: .secondary, help: "Copy (\(shortcuts.displayString(for: .copy)))") {
+            iconButton("doc.on.doc", tint: Theme.iconIdle, help: "Copy (\(shortcuts.displayString(for: .copy)))") {
                 viewModel.copy(item)
             }
 
@@ -251,7 +251,7 @@ struct PreviewPane: View {
             // was both a moving target and a narrower promise than the key.
             iconButton(
                 "arrow.down.to.line",
-                tint: .secondary,
+                tint: Theme.iconIdle,
                 help: "Save to disk (\(shortcuts.displayString(for: .saveToDisk)))"
             ) { viewModel.saveSelectedToDisk() }
 
@@ -260,7 +260,7 @@ struct PreviewPane: View {
             // onto a phone.
             iconButton(
                 "qrcode",
-                tint: .secondary,
+                tint: Theme.iconIdle,
                 help: viewModel.qrUnavailableReason(for: item)
                     ?? "Show QR Code (\(shortcuts.displayString(for: .showQR)))",
                 enabled: viewModel.canShowQRCode(for: item)
@@ -268,7 +268,7 @@ struct PreviewPane: View {
 
             iconButton(
                 viewModel.isExtractingText ? "ellipsis.circle" : "text.viewfinder",
-                tint: .secondary,
+                tint: Theme.iconIdle,
                 help: item.type != .image
                     ? "Text can only be extracted from images"
                     : item.ocrText != nil
@@ -281,7 +281,7 @@ struct PreviewPane: View {
 
             iconButton(
                 item.isPinned ? "pin.fill" : "pin",
-                tint: item.isPinned ? Theme.pinTint : .secondary,
+                tint: item.isPinned ? Theme.pinTint : Theme.iconIdle,
                 help: item.isPinned
                     ? "Unpin (\(shortcuts.displayString(for: .pin)))"
                     : "Pin to top (\(shortcuts.displayString(for: .pin)))"
@@ -289,7 +289,7 @@ struct PreviewPane: View {
 
             iconButton(
                 item.isBookmarked ? "star.fill" : "star",
-                tint: item.isBookmarked ? Theme.bookmarkTint : .secondary,
+                tint: item.isBookmarked ? Theme.bookmarkTint : Theme.iconIdle,
                 help: item.isBookmarked
                     ? "Unfavorite (\(shortcuts.displayString(for: .star)))"
                     : "Favorite — protects from cleanup (\(shortcuts.displayString(for: .star)))"
@@ -297,13 +297,13 @@ struct PreviewPane: View {
 
             iconButton(
                 item.isLocked ? "lock.fill" : "lock.open",
-                tint: item.isLocked ? Theme.lockTint : .secondary,
+                tint: item.isLocked ? Theme.accent : Theme.iconIdle,
                 help: "\(item.isLocked ? "Unlock" : "Lock") (\(shortcuts.displayString(for: .lock)))"
             ) { viewModel.toggleLockSelection() }
 
             iconButton(
                 "trash",
-                tint: .secondary,
+                tint: Theme.iconIdle,
                 help: item.isLocked
                     ? "Locked - unlock to delete"
                     : "Delete (\(shortcuts.displayString(for: .delete)))",
@@ -323,15 +323,18 @@ struct PreviewPane: View {
         enabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        // Not `.disabled(!enabled)`: on macOS 26 that also dims the label
+        // under the colour set here, and the glyph became unreadable. A
+        // no-op action keeps the click swallowed and the tooltip working;
+        // the off state is regular weight in the `iconDisabled` grey, the
+        // on state bold in `tint` (see `Theme.iconIdle`).
+        Button(action: enabled ? action : {}) {
             Image(systemName: systemImage)
-                .font(Theme.icon(13, preview: true))
-                // `.disabled` alone does not dim a `.plain` button carrying
-                // its own `foregroundStyle`, so the off state is drawn here.
-                .foregroundStyle(enabled ? tint : Color.secondary.opacity(0.3))
+                .font(Theme.icon(13, weight: Theme.iconWeight(enabled: enabled), preview: true))
+                .foregroundStyle(enabled ? tint : Theme.iconDisabled)
         }
         .buttonStyle(.plain)
-        .disabled(!enabled)
+        .accessibilityAddTraits(enabled ? [] : .isStaticText)
         .klipHelp(help)
     }
 
@@ -509,8 +512,8 @@ struct PreviewPane: View {
                         // button "did nothing" (user item 11).
                         Button(action: { viewModel.copyOCRText(ocrText) }) {
                             Image(systemName: "doc.on.doc")
-                                .font(Theme.icon(12, preview: true))
-                                .foregroundStyle(.secondary)
+                                .font(Theme.icon(12, weight: Theme.iconWeight(enabled: true), preview: true))
+                                .foregroundStyle(Theme.iconIdle)
                                 .padding(5)
                                 .contentShape(Rectangle())
                         }

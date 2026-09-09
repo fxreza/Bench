@@ -39,7 +39,8 @@ struct SearchBar: View {
                     Button(action: { viewModel.searchText = "" }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.klip(.sidebar))
-                            .foregroundStyle(.tertiary)
+                            .fontWeight(Theme.iconWeight(enabled: true))
+                            .foregroundStyle(Theme.iconIdle)
                     }
                     .buttonStyle(.plain)
                     .transition(.scale.combined(with: .opacity))

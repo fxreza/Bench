@@ -97,6 +97,20 @@ enum Theme {
     /// Destructive action colour (inline delete confirmations).
     static let destructive = Color.red
 
+    // MARK: - Icon buttons
+
+    /// Glyph-only buttons tell their two states apart by weight *and* tone:
+    /// an available icon is bold and near-black (near-white in dark mode), a
+    /// disabled one regular weight and a mid grey. Tone alone was tried
+    /// first: any grey light enough to read as "off" was too faint to make
+    /// the glyph out, and any grey dark enough to read was too close to
+    /// "on". Use `iconWeight(enabled:)` with `iconTint(enabled:)`.
+    static let iconIdle = Color.primary.opacity(0.9)
+    static let iconDisabled = Color.primary.opacity(0.55)
+
+    static func iconWeight(enabled: Bool) -> Font.Weight { enabled ? .bold : .regular }
+    static func iconTint(enabled: Bool) -> Color { enabled ? iconIdle : iconDisabled }
+
     /// Drop shadow under inline prompt cards.
     static let promptShadow = Color.black.opacity(0.3)
     static let promptShadowRadius: CGFloat = 20

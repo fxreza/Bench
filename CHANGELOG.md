@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 (2026-09-08)
+
+### Fixed
+
+- Klip: icon-only buttons (copy, delete, pin, favorite, lock, extract text, save to disk, sidebar and preview toggles) told their available and disabled states apart with `.secondary`/`.tertiary` opacity, which read as too faint in both light and dark mode to make the glyph out. They now use weight together with a fixed `Color.primary` opacity: bold and near-full opacity when available, regular weight and dimmer when disabled. Disabled preview-pane buttons switch to a no-op action instead of `.disabled()`, which on macOS 26 dimmed the label a second time on top of the new color and made the glyph unreadable.
+
 ## 0.2.1 (2026-09-08)
 
 ### Added
