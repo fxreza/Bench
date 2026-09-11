@@ -57,12 +57,14 @@ final class SnapSettings: ObservableObject {
             end if
             """
 
-        /// BTT's "Run Script: Open Downloads in Finder".
+        /// BTT's "Run Script: Open Downloads in Finder". `open folder` rather
+        /// than `make new Finder window` + `set target`: the latter opened a
+        /// fresh window at a fixed size instead of reusing Finder's own
+        /// window placement.
         static let downloadsScript = """
             tell application "Finder"
-                set newWindow to make new Finder window
-                set target of newWindow to folder "Downloads" of home
                 activate
+                open folder "Downloads" of home
             end tell
             """
     }

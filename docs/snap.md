@@ -73,9 +73,8 @@ end if
 ```applescript
 -- snap.script.downloads
 tell application "Finder"
-    set newWindow to make new Finder window
-    set target of newWindow to folder "Downloads" of home
     activate
+    open folder "Downloads" of home
 end tell
 ```
 
