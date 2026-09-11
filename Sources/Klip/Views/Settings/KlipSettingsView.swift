@@ -68,6 +68,13 @@ private struct GeneralSettingsTab: View {
                 Text("On, Klip stays on screen after you paste a clip, so you can paste several in a row. Pasting hands the keyboard back to the app you pasted into, so pick the next clip with the mouse, or press \(klipToggleHotkeyDisplay()) to put the keyboard back in Klip. Esc closes the window. Toggle it any time with the window button at the bottom-left of the history window (\(ShortcutManager.shared.displayString(for: .toggleKeepOpen))).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle("Remember the last window position", isOn: $settings.rememberWindowPosition)
+                Text(settings.rememberWindowPosition
+                     ? "Drag the window by any empty part of it. It reopens where you left it."
+                     : "Drag the window by any empty part of it. Every time Klip opens it goes back to its default spot, centred on the screen under the mouse.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Paste") {

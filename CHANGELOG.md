@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 (2026-09-10)
+
+### Added
+
+- Klip: the history window can be dragged around by any part of it that nothing else uses (the title, the gaps around the search field and filter chips, the action bar). Clip rows, the scroll areas and the pane resizers keep their own behaviour.
+- Klip: a "Remember the last window position" setting under Settings > Klip > General > Window, off by default. Off, every open puts the window back at its default spot, centred on the screen under the mouse. On, the window reopens where it was last dragged to, nudged back onto the nearest screen if that display has since gone away; switching the setting off clears the saved position.
+
 ## 0.3.0 (2026-09-08)
 
 ### Fixed

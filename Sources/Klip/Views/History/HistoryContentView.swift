@@ -184,6 +184,8 @@ struct HistoryContentView: View {
         // over a dark wallpaper the text was barely readable. See
         // `Theme.panelBackground` for the light/dark values.
         .background(Theme.panelBackground)
+        // Any press nothing else wants drags the window.
+        .modifier(WindowDragModifier())
         // The single window-level layer that draws every `.klipHelp` tooltip.
         // AppKit's own tooltips never fire in this borderless non-activating
         // panel — the full explanation is at the top of

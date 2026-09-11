@@ -103,10 +103,10 @@ class HistoryWindowController: NSWindowController, NSWindowDelegate {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        // Not movable by its background: the panel is repositioned under the
-        // mouse on every show (so a drag never survived anyway), and letting a
-        // background drag move the window would fight the row drag-and-drop
-        // that Phase 3B adds.
+        // Not movable by its background: a background drag would fight the
+        // row drag-and-drop and the pane resizers. Moving is done by
+        // `WindowDragModifier` on the SwiftUI content instead, which only
+        // fires for presses nothing else claimed.
         panel.isMovableByWindowBackground = false
         panel.animationBehavior = .utilityWindow
 
@@ -282,10 +282,20 @@ class HistoryWindowController: NSWindowController, NSWindowDelegate {
 
     /// Centre the panel on the screen under the mouse, sitting 8 % above dead
     /// centre — reads better than perfectly centred (Clipfield's placement).
+    ///
+    /// With `SettingsManager.rememberWindowPosition` on and a position saved
+    /// by `windowDidMove`, that position wins, nudged back onto the screen it
+    /// is closest to so a display that has since gone away cannot strand the
+    /// window off-screen.
     private func position(_ window: NSWindow?) {
         guard let window else { return }
         let size = panelSize
         window.setContentSize(size)
+
+        if let frame = rememberedFrame(size: size) {
+            window.setFrame(frame, display: true)
+            return
+        }
 
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else {
@@ -300,6 +310,29 @@ class HistoryWindowController: NSWindowController, NSWindowDelegate {
         )
     }
 
+    /// The saved origin with the given size, clamped into the visible frame of
+    /// the screen holding it (or the nearest one). Nil when nothing is saved
+    /// or the setting is off.
+    private func rememberedFrame(size: NSSize) -> NSRect? {
+        let settings = SettingsManager.shared
+        guard settings.rememberWindowPosition,
+              let x = settings.windowOriginX, let y = settings.windowOriginY,
+              x.isFinite, y.isFinite else { return nil }
+        var frame = NSRect(x: x, y: y, width: size.width, height: size.height)
+
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return frame }
+        let host = screens.first { $0.frame.intersects(frame) }
+            ?? screens.min { a, b in
+                a.frame.distanceSquared(to: frame.origin) < b.frame.distanceSquared(to: frame.origin)
+            }
+        guard let visible = host?.visibleFrame else { return frame }
+
+        frame.origin.x = min(max(frame.minX, visible.minX), max(visible.maxX - frame.width, visible.minX))
+        frame.origin.y = min(max(frame.minY, visible.minY), max(visible.maxY - frame.height, visible.minY))
+        return frame
+    }
+
     // MARK: - NSWindowDelegate
 
     func windowDidResize(_ notification: Notification) {
@@ -307,5 +340,25 @@ class HistoryWindowController: NSWindowController, NSWindowDelegate {
         let settings = SettingsManager.shared
         settings.windowWidth = Double(size.width)
         settings.windowHeight = Double(size.height)
+    }
+
+    /// Records where the user dragged the window, only while Remember
+    /// Position is on. Off, the origin stays nil and every open goes back to
+    /// the default placement.
+    func windowDidMove(_ notification: Notification) {
+        let settings = SettingsManager.shared
+        guard settings.rememberWindowPosition, let origin = window?.frame.origin else { return }
+        settings.windowOriginX = Double(origin.x)
+        settings.windowOriginY = Double(origin.y)
+    }
+}
+
+private extension NSRect {
+    /// Squared distance from `point` to the nearest point of this rect (zero
+    /// when inside).
+    func distanceSquared(to point: NSPoint) -> CGFloat {
+        let dx = max(minX - point.x, 0, point.x - maxX)
+        let dy = max(minY - point.y, 0, point.y - maxY)
+        return dx * dx + dy * dy
     }
 }

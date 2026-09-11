@@ -278,6 +278,50 @@ final class SettingsManager: ObservableObject {
         }
     }
 
+    /// Remember Position: the history window reopens where it was last
+    /// dragged to instead of at its default spot (centred, a little above
+    /// the middle of the screen under the mouse).
+    ///
+    /// Off by default: the window can always be dragged around while it is
+    /// open, but every fresh open goes back to the default placement. On,
+    /// `HistoryWindowController.windowDidMove` records the origin and
+    /// `position(_:)` reuses it, clamped onto whichever screen still holds
+    /// it. The saved origin is cleared when this is switched off, so turning
+    /// it on again later does not resurrect a position from another day.
+    @Published var rememberWindowPosition: Bool = false {
+        didSet {
+            guard isLoaded, rememberWindowPosition != oldValue else { return }
+            set(rememberWindowPosition, forKey: "window.rememberPosition")
+            if !rememberWindowPosition {
+                windowOriginX = nil
+                windowOriginY = nil
+            }
+        }
+    }
+
+    /// Bottom-left corner of the history window in screen coordinates, as
+    /// last dragged with `rememberWindowPosition` on. Nil until then.
+    @Published var windowOriginX: Double? = nil {
+        didSet {
+            guard isLoaded, windowOriginX != oldValue else { return }
+            if let windowOriginX {
+                set(windowOriginX, forKey: "window.originX")
+            } else {
+                removeObject(forKey: "window.originX")
+            }
+        }
+    }
+    @Published var windowOriginY: Double? = nil {
+        didSet {
+            guard isLoaded, windowOriginY != oldValue else { return }
+            if let windowOriginY {
+                set(windowOriginY, forKey: "window.originY")
+            } else {
+                removeObject(forKey: "window.originY")
+            }
+        }
+    }
+
     // MARK: - Files (Phase 3F)
 
     /// Cap, in megabytes, under which a copied file's bytes are copied into
@@ -419,6 +463,11 @@ final class SettingsManager: ObservableObject {
         // absent key, which is the wanted default for each.
         self.keepSearchBetweenOpens = bool(forKey: "search.keepBetweenOpens")
         self.keepWindowOpen = bool(forKey: "window.keepOpen")
+        self.rememberWindowPosition = bool(forKey: "window.rememberPosition")
+        if rememberWindowPosition {
+            self.windowOriginX = object(forKey: "window.originX") as? Double
+            self.windowOriginY = object(forKey: "window.originY") as? Double
+        }
         // --- Phase 4A: iCloud Drive sync ---
         self.syncEnabled = bool(forKey: "sync.enabled")
         if let raw = object(forKey: "sync.maxAttachmentMB") as? Int {
