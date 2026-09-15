@@ -12,6 +12,7 @@ exit(MainActor.assumeIsolated {
     let suites: [TestSuite] = [
         ("LayoutTests", LayoutTests.tests),
         ("GapTests", GapTests.tests),
+        ("ResizeTests", ResizeTests.tests),
         ("GeometryTests", GeometryTests.tests),
         ("RestoreMemoryTests", RestoreMemoryTests.tests),
         ("FeatureTests", FeatureTests.tests),

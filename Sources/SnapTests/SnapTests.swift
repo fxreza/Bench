@@ -192,6 +192,89 @@ enum GapTests {
     ]
 }
 
+// MARK: - Make Larger / Smaller, Almost Maximize
+
+enum ResizeTests {
+    /// A 400 x 300 window sitting in the middle of `visible`.
+    static let window = CGRect(x: 400, y: 300, width: 400, height: 300)
+
+    static let tests: [TestCase] = [
+        ("larger grows around the centre", {
+            let rect = SnapResize.stepped(window, by: 60, in: visible)
+            try expectRect(rect, CGRect(x: 370, y: 270, width: 460, height: 360))
+            try expectEqual(rect.midX, window.midX, "centre x kept")
+            try expectEqual(rect.midY, window.midY, "centre y kept")
+        }),
+        ("smaller shrinks around the centre", {
+            let rect = SnapResize.stepped(window, by: -60, in: visible)
+            try expectRect(rect, CGRect(x: 430, y: 330, width: 340, height: 240))
+        }),
+        ("larger and smaller undo each other", {
+            let grown = SnapResize.stepped(window, by: 60, in: visible)
+            try expectRect(SnapResize.stepped(grown, by: -60, in: visible), window)
+        }),
+        ("larger is pushed back inside the screen at an edge", {
+            // Flush with the left and bottom edges: growing would spill over.
+            let corner = CGRect(x: 100, y: 50, width: 400, height: 300)
+            let rect = SnapResize.stepped(corner, by: 60, in: visible)
+            try expectRect(rect, CGRect(x: 100, y: 50, width: 460, height: 360))
+        }),
+        ("larger caps at the visible frame", {
+            var rect = window
+            for _ in 0..<40 { rect = SnapResize.stepped(rect, by: 60, in: visible) }
+            try expectRect(rect, visible)
+        }),
+        ("smaller stops at the minimum size", {
+            var rect = window
+            for _ in 0..<40 { rect = SnapResize.stepped(rect, by: -60, in: visible) }
+            try expectEqual(rect.size, SnapResize.minimumSize)
+            try expectEqual(rect.midX, window.midX, "centre x kept")
+        }),
+        ("a window hanging off screen is brought back when stepped", {
+            let outside = CGRect(x: 900, y: 700, width: 400, height: 300)
+            let rect = SnapResize.stepped(outside, by: 60, in: visible)
+            try expect(visible.contains(rect), "inside: \(rect)")
+        }),
+        ("the gap is honoured", {
+            // gap 10: content is 980 x 780 at (110, 60); the cap is the content.
+            var rect = window
+            for _ in 0..<40 { rect = SnapResize.stepped(rect, by: 60, in: visible, gap: 10) }
+            try expectRect(rect, CGRect(x: 110, y: 60, width: 980, height: 780))
+        }),
+        ("almost maximize is centred at the fraction", {
+            let rect = SnapResize.almostMaximized(in: visible, fraction: 0.9)
+            try expectRect(rect, CGRect(x: 150, y: 90, width: 900, height: 720))
+            try expectEqual(rect.midX, visible.midX)
+            try expectEqual(rect.midY, visible.midY)
+        }),
+        ("almost maximize at 100 % is maximize", {
+            try expectRect(SnapResize.almostMaximized(in: visible, fraction: 1), visible)
+        }),
+        ("almost maximize honours the gap", {
+            let rect = SnapResize.almostMaximized(in: visible, gap: 10, fraction: 0.5)
+            try expectRect(rect, CGRect(x: 355, y: 255, width: 490, height: 390))
+        }),
+        ("almost maximize clamps a silly fraction", {
+            try expectRect(SnapResize.almostMaximized(in: visible, fraction: 3), visible)
+            let tiny = SnapResize.almostMaximized(in: visible, fraction: 0)
+            try expectRect(tiny, SnapResize.almostMaximized(in: visible, fraction: 0.1))
+        }),
+        ("the settings clamp the step and the fraction", {
+            let settings = SnapSettings(defaults: UserDefaults(suiteName: "snap.tests.\(UUID().uuidString)")!)
+            settings.resizeStep = -5
+            try expectEqual(settings.effectiveResizeStep, 1)
+            settings.resizeStep = 40
+            try expectEqual(settings.effectiveResizeStep, 40)
+            settings.almostMaximizePercent = 500
+            try expectEqual(settings.effectiveAlmostMaximizeFraction, 1)
+            settings.almostMaximizePercent = 0
+            try expectEqual(settings.effectiveAlmostMaximizeFraction, 0.1)
+            settings.almostMaximizePercent = 80
+            try expectEqual(settings.effectiveAlmostMaximizeFraction, 0.8)
+        }),
+    ]
+}
+
 // MARK: - Coordinate conversion
 
 enum GeometryTests {
@@ -240,34 +323,46 @@ enum RestoreMemoryTests {
     }
 
     static let tests: [TestCase] = [
-        ("remembers the first frame only", {
+        ("every change overwrites the memory", {
             let memory = RestoreMemory()
             let window = identity(1)
             let original = CGRect(x: 0, y: 0, width: 400, height: 300)
-            memory.rememberIfNeeded(window, frame: original)
-            memory.rememberIfNeeded(window, frame: CGRect(x: 9, y: 9, width: 9, height: 9))
-            try expectEqual(memory.frame(for: window), original)
+            let later = CGRect(x: 9, y: 9, width: 9, height: 9)
+            memory.remember(window, frame: original)
+            memory.remember(window, frame: later)
+            try expectEqual(memory.frame(for: window), later)
             try expectEqual(memory.count, 1)
         }),
-        ("restore hands the frame back and forgets it", {
+        ("restore swaps: repeated presses flip between the last two frames", {
             let memory = RestoreMemory()
             let window = identity(2)
             let original = CGRect(x: 5, y: 6, width: 700, height: 500)
-            memory.rememberIfNeeded(window, frame: original)
+            let maximized = CGRect(x: 0, y: 0, width: 1000, height: 800)
+            memory.remember(window, frame: original)
             try expect(memory.has(window), "remembered")
-            try expectEqual(memory.restore(window), original)
-            try expect(!memory.has(window), "forgotten after restore")
-            try expectNil(memory.restore(window))
+            try expectEqual(memory.swap(window, current: maximized), original)
+            try expect(memory.has(window), "still remembered after a restore")
+            try expectEqual(memory.swap(window, current: original), maximized)
+            try expectEqual(memory.swap(window, current: maximized), original)
+            try expectEqual(memory.count, 1)
+        }),
+        ("an unknown window restores to nothing and stores nothing", {
+            let memory = RestoreMemory()
+            try expectNil(memory.swap(identity(99), current: .zero))
             try expectEqual(memory.count, 0)
         }),
-        ("an unknown window restores to nothing", {
+        ("forget drops the window", {
             let memory = RestoreMemory()
-            try expectNil(memory.restore(identity(99)))
+            let window = identity(3)
+            memory.remember(window, frame: .zero)
+            memory.forget(window)
+            try expect(!memory.has(window), "forgotten")
+            try expectEqual(memory.count, 0)
         }),
         ("the oldest entry is evicted at capacity", {
             let memory = RestoreMemory(capacity: 3)
             for index in 1...4 {
-                memory.rememberIfNeeded(
+                memory.remember(
                     identity(CGWindowID(index)),
                     frame: CGRect(x: CGFloat(index), y: 0, width: 100, height: 100))
             }
@@ -275,11 +370,20 @@ enum RestoreMemoryTests {
             try expectNil(memory.frame(for: identity(1)))
             try expectNotNil(memory.frame(for: identity(4)))
         }),
+        ("overwriting an entry does not count against capacity", {
+            let memory = RestoreMemory(capacity: 2)
+            memory.remember(identity(1), frame: .zero)
+            memory.remember(identity(2), frame: .zero)
+            memory.remember(identity(1), frame: CGRect(x: 1, y: 1, width: 1, height: 1))
+            try expectEqual(memory.count, 2)
+            try expectNotNil(memory.frame(for: identity(1)))
+            try expectNotNil(memory.frame(for: identity(2)))
+        }),
         ("the default cap is 64", {
             let memory = RestoreMemory()
             try expectEqual(memory.capacity, 64)
             for index in 1...100 {
-                memory.rememberIfNeeded(identity(CGWindowID(index)), frame: .zero)
+                memory.remember(identity(CGWindowID(index)), frame: .zero)
             }
             try expectEqual(memory.count, 64)
             try expectNil(memory.frame(for: identity(36)))
@@ -287,8 +391,8 @@ enum RestoreMemoryTests {
         }),
         ("quitting an app drops its windows", {
             let memory = RestoreMemory()
-            memory.rememberIfNeeded(WindowIdentity(pid: 1, windowID: 10), frame: .zero)
-            memory.rememberIfNeeded(WindowIdentity(pid: 2, windowID: 11), frame: .zero)
+            memory.remember(WindowIdentity(pid: 1, windowID: 10), frame: .zero)
+            memory.remember(WindowIdentity(pid: 2, windowID: 11), frame: .zero)
             memory.forgetAll(pid: 1)
             try expectEqual(memory.count, 1)
             try expectNotNil(memory.frame(for: WindowIdentity(pid: 2, windowID: 11)))
@@ -321,6 +425,7 @@ enum FeatureTests {
             let expected: Set<String> = [
                 "snap.leftHalf", "snap.rightHalf", "snap.topHalf", "snap.bottomHalf",
                 "snap.maximize", "snap.restore", "snap.center",
+                "snap.almostMaximize", "snap.larger", "snap.smaller",
                 "snap.topLeft", "snap.topRight", "snap.bottomLeft", "snap.bottomRight",
                 "snap.leftThird", "snap.middleThird", "snap.rightThird",
                 "snap.leftTwoThirds", "snap.centerTwoThirds", "snap.rightTwoThirds",
@@ -328,7 +433,7 @@ enum FeatureTests {
                 "snap.openApp1", "snap.openApp2", "snap.openApp3",
             ]
             try expectEqual(ids, expected)
-            try expectEqual(SnapFeature.actionTable.count, 23)
+            try expectEqual(SnapFeature.actionTable.count, 26)
         }),
         ("every layout is reachable from a shortcut", {
             let layouts = SnapFeature.actionTable.compactMap { entry -> SnapLayout? in
@@ -351,6 +456,10 @@ enum FeatureTests {
             // Launchers live on Caps Lock+⌥ (⌃⌥), away from the ⌃⌘ window family.
             try expectEqual(binding("snap.terminalScript"), KeyBinding(17, [.control, .option]))
             try expectEqual(binding("snap.downloadsScript"), KeyBinding(14, [.control, .option]))
+            // The Raycast-style resizes are part of the ⌃⌘ window family: M, = and -.
+            try expectEqual(binding("snap.almostMaximize"), KeyBinding(46, [.control, .command]))
+            try expectEqual(binding("snap.larger"), KeyBinding(24, [.control, .command]))
+            try expectEqual(binding("snap.smaller"), KeyBinding(27, [.control, .command]))
             // The spare app launchers ship unbound.
             for slot in 1...SnapSettings.launcherSlots {
                 try expectEqual(binding("snap.openApp\(slot)"), nil)
@@ -394,6 +503,8 @@ enum FeatureTests {
             defaults.removePersistentDomain(forName: suite)
             let settings = SnapSettings(defaults: defaults)
             try expectEqual(settings.gap, 0)
+            try expectEqual(settings.resizeStep, 60)
+            try expectEqual(settings.almostMaximizePercent, 90)
             try expectEqual(settings.terminalScript, SnapSettings.Defaults.terminalScript)
         }),
         ("a reset puts the shipped script back", {

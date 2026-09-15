@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2 (2026-09-15)
+
+### Added
+
+- Snap: Make Larger (Control+Command+=) and Make Smaller (Control+Command+-), Raycast style. Each press grows or shrinks the window's width and height by the resize step (60 pt by default, in Settings > Snap > Layout), keeps its centre, and pushes it back inside the screen when it would spill over an edge. Make Larger ends at the visible frame, Make Smaller at 100 x 100 or the app's own minimum.
+- Snap: Almost Maximize (Control+Command+M), Raycast style. The window fills 90 % of the screen's visible frame, centred, leaving a margin of desktop all round; the percentage is in Settings > Snap > Layout.
+
+### Changed
+
+- Snap: Restore Previous Size now works like Raycast's Restore. Every Snap change (a layout, Make Larger or Smaller, Almost Maximize, a modifier-key move or resize) records the frame the window had just before it, so Restore always goes back one step, whatever the window looked like in between. Restore also records the frame it leaves, so pressing it again flips forward, and repeated presses alternate between the last two states. It used to remember only the first frame Snap ever saw for a window and forget it after one restore.
+
 ## 0.3.1 (2026-09-10)
 
 ### Added

@@ -15,6 +15,8 @@ final class SnapSettings: ObservableObject {
 
     enum Key {
         static let gap = "snap.gap"
+        static let resizeStep = "snap.resizeStep"
+        static let almostMaximizePercent = "snap.almostMaximizePercent"
         static let terminalScript = "snap.script.terminal"
         static let downloadsScript = "snap.script.downloads"
         /// Path of the .app behind launcher `slot` (1-based), "" when unset.
@@ -28,6 +30,12 @@ final class SnapSettings: ObservableObject {
 
     enum Defaults {
         static let gap: Double = 0
+        /// Points Make Larger adds to (and Make Smaller takes from) each
+        /// dimension per press: 30 on every side, noticeable but not a jump.
+        static let resizeStep: Double = 60
+        /// Almost Maximize as a percentage of the visible frame's width and
+        /// height, like Raycast's: enough desktop left to see around it.
+        static let almostMaximizePercent: Double = 90
 
         static let modifierDragEnabled = true
         /// BetterTouchTool's own defaults for "Moving & Resizing Modifier
@@ -73,6 +81,16 @@ final class SnapSettings: ObservableObject {
     /// windows side by side. 0 reproduces BetterTouchTool's flush tiling.
     @Published var gap: Double {
         didSet { defaults.set(gap, forKey: Key.gap) }
+    }
+
+    /// Points per Make Larger / Make Smaller press, in each dimension.
+    @Published var resizeStep: Double {
+        didSet { defaults.set(resizeStep, forKey: Key.resizeStep) }
+    }
+
+    /// Almost Maximize's size, as a percentage of the visible frame.
+    @Published var almostMaximizePercent: Double {
+        didSet { defaults.set(almostMaximizePercent, forKey: Key.almostMaximizePercent) }
     }
 
     @Published var terminalScript: String {
@@ -145,6 +163,9 @@ final class SnapSettings: ObservableObject {
     init(defaults: UserDefaults = BenchDefaults.standard) {
         self.defaults = defaults
         gap = defaults.object(forKey: Key.gap) as? Double ?? Defaults.gap
+        resizeStep = defaults.object(forKey: Key.resizeStep) as? Double ?? Defaults.resizeStep
+        almostMaximizePercent = defaults.object(forKey: Key.almostMaximizePercent) as? Double
+            ?? Defaults.almostMaximizePercent
         terminalScript = defaults.string(forKey: Key.terminalScript) ?? Defaults.terminalScript
         downloadsScript = defaults.string(forKey: Key.downloadsScript) ?? Defaults.downloadsScript
         launcherPaths = (1...Self.launcherSlots).map { defaults.string(forKey: Key.launcher($0)) ?? "" }
@@ -161,6 +182,13 @@ final class SnapSettings: ObservableObject {
     /// The gap as the geometry wants it: never negative, never so large that
     /// a quarter would vanish.
     var effectiveGap: CGFloat { CGFloat(min(max(gap, 0), 200)) }
+
+    /// The step as the geometry wants it: at least a point, and never so
+    /// large that one press outgrows any screen.
+    var effectiveResizeStep: CGFloat { CGFloat(min(max(resizeStep, 1), 1000)) }
+
+    /// Almost Maximize as a fraction: 10 % at the least, 100 % at the most.
+    var effectiveAlmostMaximizeFraction: CGFloat { CGFloat(min(max(almostMaximizePercent, 10), 100) / 100) }
 
     /// The threshold as the gesture wants it: never negative, never so large
     /// that the gesture could not be triggered by a normal flick of the wrist.

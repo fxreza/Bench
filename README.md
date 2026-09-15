@@ -54,8 +54,9 @@ Gemini side by side, plus speech and clipboard translation.
 ### Snap - window management
 
 Move and resize the frontmost window from the keyboard: halves, quarters,
-thirds and two-thirds, maximize, restore and center, plus a jump back to the
-previous window and two scripted shortcuts.
+thirds and two-thirds, maximize, almost maximize, make larger and smaller,
+restore and center, plus a jump back to the previous window and two scripted
+shortcuts.
 
 | Action | Shortcut | | Action | Shortcut |
 |---|---|---|---|---|
@@ -69,6 +70,12 @@ previous window and two scripted shortcuts.
 | Previous window | ⌥⇥ | | First two thirds | ⌃⌘J |
 | Terminal here | ⌃⌘T | | Center two thirds | ⌃⌘K |
 | Downloads | ⌘E | | Last two thirds | ⌃⌘L |
+| Almost maximize | ⌃⌘M | | Make larger | ⌃⌘= |
+| | | | Make smaller | ⌃⌘- |
+
+Restore goes back to the frame the window had before Snap last changed it,
+and pressing it again flips forward, so repeated presses alternate between
+the last two states, as in Raycast.
 
 Every shortcut above is a default. Settings > Shortcuts lists all of them
 together and lets you rebind or clear any one; a combination another action

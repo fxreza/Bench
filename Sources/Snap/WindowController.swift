@@ -137,20 +137,62 @@ final class WindowController {
 
     @discardableResult
     func apply(_ layout: SnapLayout, to window: AXUIElement, pid: pid_t, gap: CGFloat) -> Bool {
+        place(window, pid: pid) { visible, current in
+            layout.frame(in: visible, gap: gap, currentSize: current.size)
+        }
+    }
+
+    /// Make Larger (`step` > 0) or Make Smaller (`step` < 0) on the focused
+    /// window: `step` points in each dimension, centre kept, inside the screen.
+    @discardableResult
+    func resize(by step: CGFloat, gap: CGFloat) -> Bool {
+        guard let (window, pid) = focusedWindow() else { return false }
+        return place(window, pid: pid) { visible, current in
+            SnapResize.stepped(current, by: step, in: visible, gap: gap)
+        }
+    }
+
+    /// Almost Maximize on the focused window: `fraction` of the visible
+    /// frame, centred.
+    @discardableResult
+    func almostMaximize(fraction: CGFloat, gap: CGFloat) -> Bool {
+        guard let (window, pid) = focusedWindow() else { return false }
+        return place(window, pid: pid) { visible, _ in
+            SnapResize.almostMaximized(in: visible, gap: gap, fraction: fraction)
+        }
+    }
+
+    /// Moves `window` to the frame `target` computes from its screen's
+    /// visible frame and its current frame, remembering the current frame
+    /// first so Restore can bring it back. A target equal to the current
+    /// frame (Maximize on an already maximized window) remembers nothing:
+    /// Restore should still lead to the state before *that*, not to a copy
+    /// of where the window already is.
+    private func place(_ window: AXUIElement, pid: pid_t, target: (CGRect, CGRect) -> CGRect) -> Bool {
         guard isManageable(window), let current = cocoaFrame(of: window) else { return false }
         guard let screen = SnapGeometry.screen(for: current) else { return false }
-
-        // Remember where the window was before Snap first moved it. Done
-        // before the move and only once per window, so "Restore" always
-        // means "back to how the user had it".
-        memory.rememberIfNeeded(identity(of: window, pid: pid), frame: current)
-
-        let target = layout.frame(in: screen.visibleFrame, gap: gap, currentSize: current.size)
-        setFrame(window, cocoaRect: target)
+        let frame = target(screen.visibleFrame, current).snapRounded
+        if frame != current.snapRounded {
+            memory.remember(identity(of: window, pid: pid), frame: current)
+        }
+        setFrame(window, cocoaRect: frame)
         return true
     }
 
-    /// Puts the focused window back to its pre-Snap frame and forgets it.
+    /// Records `window`'s frame as its previous state, for a change that is
+    /// about to be made outside `place` (the modifier-key drag), so Restore
+    /// undoes that change too.
+    func rememberBeforeGesture(_ window: AXUIElement) {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(window, &pid) == .success,
+              let current = cocoaFrame(of: window)
+        else { return }
+        memory.remember(identity(of: window, pid: pid), frame: current)
+    }
+
+    /// Restore: puts the focused window back to the frame it had before
+    /// Snap last changed it, and remembers where it was just now, so a
+    /// second press flips back again.
     @discardableResult
     func restore() -> Bool {
         guard let (window, pid) = focusedWindow() else { return false }
@@ -159,9 +201,9 @@ final class WindowController {
 
     @discardableResult
     func restore(_ window: AXUIElement, pid: pid_t) -> Bool {
-        guard isManageable(window) else { return false }
-        guard let frame = memory.restore(identity(of: window, pid: pid)) else { return false }
-        setFrame(window, cocoaRect: frame)
+        guard isManageable(window), let current = cocoaFrame(of: window) else { return false }
+        guard let previous = memory.swap(identity(of: window, pid: pid), current: current) else { return false }
+        setFrame(window, cocoaRect: previous)
         return true
     }
 

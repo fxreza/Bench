@@ -6,11 +6,15 @@ import BenchCore
 /// Window management: the BetterTouchTool triggers this Mac used to carry,
 /// reimplemented as a Bench module.
 ///
-/// Four groups of behaviour:
+/// Five groups of behaviour:
 ///
 /// - **Layouts.** Sixteen placements (halves, quarters, thirds, two-thirds,
 ///   maximize, center) plus "Restore Previous Size", all on ⌃⌘ combinations.
 ///   Geometry is `SnapLayout`, Accessibility plumbing is `WindowController`.
+/// - **Resizing.** Raycast's Make Larger, Make Smaller and Almost Maximize
+///   on ⌃⌘M, ⌃⌘= and ⌃⌘- (`SnapResize`). Restore works like Raycast's too: back
+///   to the frame before the last Snap change, and a second press flips
+///   forward again (`RestoreMemory`).
 /// - **Previous window.** ⌥⇥ flips between the last two focused windows
 ///   (`FocusHistory`), pressing again flips back.
 /// - **Two scripts.** ⌃⌥T opens a new Terminal window and ⌃⌥E opens
@@ -43,7 +47,7 @@ public final class SnapFeature: BenchFeature {
     public let id = "snap"
     public let title = "Snap"
     public let symbolName = "macwindow.on.rectangle"
-    public let summary = "Window layouts, restore, previous window and two scripts"
+    public let summary = "Window layouts, resizing, restore, previous window and two scripts"
     /// Accessibility moves the windows; Automation is the per-app Apple
     /// Events grant the two scripts need.
     public let requiredPermissions: [BenchPermission] = [.accessibility, .automation]
@@ -54,6 +58,9 @@ public final class SnapFeature: BenchFeature {
     enum Action: Equatable, Sendable {
         case layout(SnapLayout)
         case restore
+        case almostMaximize
+        case larger
+        case smaller
         case previousWindow
         case terminalScript
         case downloadsScript
@@ -76,7 +83,13 @@ public final class SnapFeature: BenchFeature {
         ("snap.maximize", "Maximize", .layout(.maximize), KeyBinding(36, control),
          "Fills the screen's visible area. Not macOS full screen."),
         ("snap.restore", "Restore Previous Size", .restore, KeyBinding(51, control),
-         "Back to the frame the window had before Snap first moved it."),
+         "Back to the frame the window had before Snap last changed it. Press again to flip forward again."),
+        ("snap.almostMaximize", "Almost Maximize", .almostMaximize, KeyBinding(46, control),
+         "Fills most of the screen, centred, leaving a margin all round. The size is set above."),
+        ("snap.larger", "Make Larger", .larger, KeyBinding(24, control),
+         "Grows the window by the resize step, keeping its centre."),
+        ("snap.smaller", "Make Smaller", .smaller, KeyBinding(27, control),
+         "Shrinks the window by the resize step, keeping its centre."),
         ("snap.center", "Center", .layout(.center), KeyBinding(8, control), nil),
         ("snap.topLeft", "Top Left Quarter", .layout(.topLeft), KeyBinding(33, control), nil),
         ("snap.topRight", "Top Right Quarter", .layout(.topRight), KeyBinding(30, control), nil),
@@ -161,6 +174,19 @@ public final class SnapFeature: BenchFeature {
         case .restore:
             guard requireAccessibility() else { return }
             if !controller.restore() { NSSound.beep() }
+        case .almostMaximize:
+            guard requireAccessibility() else { return }
+            if !controller.almostMaximize(
+                fraction: settings.effectiveAlmostMaximizeFraction, gap: settings.effectiveGap)
+            {
+                NSSound.beep()
+            }
+        case .larger:
+            guard requireAccessibility() else { return }
+            if !controller.resize(by: settings.effectiveResizeStep, gap: settings.effectiveGap) { NSSound.beep() }
+        case .smaller:
+            guard requireAccessibility() else { return }
+            if !controller.resize(by: -settings.effectiveResizeStep, gap: settings.effectiveGap) { NSSound.beep() }
         case .previousWindow:
             guard requireAccessibility() else { return }
             if !focusHistory.activatePrevious() { NSSound.beep() }
@@ -254,7 +280,9 @@ public final class SnapFeature: BenchFeature {
         add(["snap.leftThird", "snap.middleThird", "snap.rightThird",
              "snap.leftTwoThirds", "snap.centerTwoThirds", "snap.rightTwoThirds"])
         submenu.addItem(.separator())
-        add(["snap.maximize", "snap.center", "snap.restore"])
+        add(["snap.maximize", "snap.almostMaximize", "snap.center", "snap.restore"])
+        submenu.addItem(.separator())
+        add(["snap.larger", "snap.smaller"])
         submenu.addItem(.separator())
         add(["snap.previousWindow"])
         submenu.addItem(.separator())

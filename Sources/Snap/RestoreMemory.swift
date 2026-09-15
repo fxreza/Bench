@@ -25,12 +25,17 @@ struct WindowIdentity: Hashable {
     }
 }
 
-/// "What did this window look like before Snap first touched it?"
+/// "What did this window look like before Snap last touched it?"
 ///
-/// Written once per window - the frame remembered is the one from *before*
-/// the first Snap move, so a maximize followed by three thirds and a restore
-/// still lands back where the user left it. `restore` hands the frame back
-/// and forgets it, so the next move starts a fresh memory.
+/// One frame per window, the way Raycast's Restore works: every Snap change
+/// (a layout, Make Larger, Almost Maximize, a modifier-key drag) records the
+/// frame the window had *just before* it, overwriting whatever was there. So
+/// the memory always holds the previous state, however the window got there,
+/// including a move the user made by hand in between.
+///
+/// `swap` is Restore: it hands the remembered frame back and stores the
+/// window's current frame in its place, so pressing Restore twice flips
+/// between the last two states rather than restoring once and forgetting.
 ///
 /// Bounded: the oldest entry is dropped past `capacity`, because a window
 /// that was closed hours ago can never be restored and its `AXUIElement` is
@@ -49,13 +54,12 @@ final class RestoreMemory {
 
     var count: Int { frames.count }
 
-    /// Records `frame` the first time this window is seen. A second call for
-    /// the same window is ignored on purpose: the remembered frame must stay
-    /// the pre-Snap one.
-    func rememberIfNeeded(_ identity: WindowIdentity, frame: CGRect) {
-        guard frames[identity] == nil else { return }
-        frames[identity] = frame
-        order.append(identity)
+    /// Records `frame` as the window's previous state, replacing any earlier
+    /// memory of it.
+    func remember(_ identity: WindowIdentity, frame: CGRect) {
+        if frames.updateValue(frame, forKey: identity) == nil {
+            order.append(identity)
+        }
         while order.count > capacity, let oldest = order.first {
             order.removeFirst()
             frames.removeValue(forKey: oldest)
@@ -66,15 +70,18 @@ final class RestoreMemory {
 
     func has(_ identity: WindowIdentity) -> Bool { frames[identity] != nil }
 
-    /// The remembered frame, forgotten in the same breath.
-    func restore(_ identity: WindowIdentity) -> CGRect? {
-        guard let frame = frames.removeValue(forKey: identity) else { return nil }
-        order.removeAll { $0 == identity }
-        return frame
+    /// Restore: the remembered frame, with `current` stored in its place so
+    /// the next call comes back here. Nil, and nothing stored, when the
+    /// window was never touched by Snap.
+    func swap(_ identity: WindowIdentity, current: CGRect) -> CGRect? {
+        guard let previous = frames[identity] else { return nil }
+        frames[identity] = current
+        return previous
     }
 
     func forget(_ identity: WindowIdentity) {
-        _ = restore(identity)
+        guard frames.removeValue(forKey: identity) != nil else { return }
+        order.removeAll { $0 == identity }
     }
 
     /// Drops everything for one process - what happens when an app quits.

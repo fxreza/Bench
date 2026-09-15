@@ -27,6 +27,32 @@ struct SnapSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Almost Maximize")
+                        Slider(value: $settings.almostMaximizePercent, in: 50...100, step: 1)
+                        Text("\(Int(settings.almostMaximizePercent)) %")
+                            .monospacedDigit()
+                            .frame(width: 48, alignment: .trailing)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("How much of the screen Almost Maximize fills, centred. 100 is a plain Maximize.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Resize step")
+                        Slider(value: $settings.resizeStep, in: 10...200, step: 10)
+                        Text("\(Int(settings.resizeStep)) pt")
+                            .monospacedDigit()
+                            .frame(width: 48, alignment: .trailing)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("How much Make Larger and Make Smaller change the width and height per press. The window keeps its centre and stays on screen.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Window moving & resizing") {

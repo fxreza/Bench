@@ -1,8 +1,8 @@
 # Snap
 
 Window management: the BetterTouchTool triggers this Mac used to carry,
-rebuilt as a Bench module. Sixteen layouts, a previous-window switch and two
-AppleScripts.
+rebuilt as a Bench module. Sixteen layouts, three Raycast-style resizes, a
+previous-window switch and two AppleScripts.
 
 ## Shortcuts
 
@@ -18,7 +18,10 @@ plain ⌃⌘ and **either** Control key triggers the action.
 | `snap.topHalf` | Top Half | ⌃⌘↑ | 126 | top half |
 | `snap.bottomHalf` | Bottom Half | ⌃⌘↓ | 125 | bottom half |
 | `snap.maximize` | Maximize | ⌃⌘↩ | 36 | fills the visible frame (not native full screen) |
-| `snap.restore` | Restore Previous Size | ⌃⌘⌫ | 51 | back to the frame the window had before Snap first moved it |
+| `snap.restore` | Restore Previous Size | ⌃⌘⌫ | 51 | back to the frame the window had before Snap last changed it; press again to flip forward again |
+| `snap.almostMaximize` | Almost Maximize | ⌃⌘M | 46 | `snap.almostMaximizePercent` of the visible frame, centred (Raycast's Almost Maximize) |
+| `snap.larger` | Make Larger | ⌃⌘= | 24 | grows width and height by `snap.resizeStep`, centre kept, pushed back inside the screen at an edge |
+| `snap.smaller` | Make Smaller | ⌃⌘- | 27 | shrinks the same way, never below 100 x 100 |
 | `snap.center` | Center | ⌃⌘C | 8 | keeps the size, centres it in the visible frame |
 | `snap.topLeft` | Top Left Quarter | ⌃⌘[ | 33 | |
 | `snap.topRight` | Top Right Quarter | ⌃⌘] | 30 | |
@@ -37,6 +40,25 @@ plain ⌃⌘ and **either** Control key triggers the action.
 `⌘E` is a global hot key: it fires ahead of any app's own ⌘E menu item.
 Rebind it in Settings > Snap > Shortcuts if that gets in the way.
 
+## Restore
+
+Restore works the way Raycast's does. Every change Snap makes to a window - a
+layout, Make Larger / Smaller, Almost Maximize, a modifier-key move or
+resize - first records the frame the window had *just before* it, replacing
+any earlier record. So Restore always goes back one step, whatever the window
+looked like in between, including a move the user made by hand. Restore
+itself records the frame it is leaving, so pressing it again flips forward,
+and repeated presses alternate between the last two states.
+
+Only Snap's own changes are recorded. A window dragged or resized by hand and
+never touched by Snap has nothing to restore to, and a change made by hand
+*after* a Snap change is not a step of its own: Restore returns to the
+pre-Snap frame, and a second press comes back to the hand-made one.
+
+A change that would not move the window (Maximize on an already maximized
+window) records nothing, so it cannot overwrite a useful memory with a copy
+of the current frame.
+
 ## Not ported from BetterTouchTool
 
 - *Unpin Focused Window To NOT Float On Top* - needs BTT's private
@@ -51,6 +73,8 @@ Rebind it in Settings > Snap > Shortcuts if that gets in the way.
 | Key | Default | Meaning |
 |---|---|---|
 | `snap.gap` | 0 | points between a window and the screen edges, and between two windows side by side |
+| `snap.resizeStep` | 60 | points Make Larger adds to, and Make Smaller takes from, each dimension per press (clamped to 1...1000) |
+| `snap.almostMaximizePercent` | 90 | Almost Maximize's width and height as a percentage of the visible frame (clamped to 10...100) |
 | `snap.script.terminal` | see below | AppleScript for ⌃⌘T |
 | `snap.script.downloads` | see below | AppleScript for ⌘E |
 
@@ -105,9 +129,10 @@ what they rounded away.
 | File | Holds |
 |---|---|
 | `SnapLayout.swift` | pure geometry: every placement, the gap arithmetic |
+| `SnapResize.swift` | pure geometry: Make Larger / Smaller and Almost Maximize |
 | `SnapGeometry.swift` | the AX/Cocoa flip and the screen-for-a-window choice |
 | `WindowController.swift` | Accessibility reads and writes, window identity, apply/restore |
-| `RestoreMemory.swift` | pre-Snap frames, keyed by pid + `CGWindowID`, capped at 64 |
+| `RestoreMemory.swift` | the frame before the last Snap change, keyed by pid + `CGWindowID`, capped at 64; `swap` is Restore |
 | `FocusHistory.swift` | focus tracking for Activate Previous Window |
 | `ScriptRunner.swift` | `NSAppleScript` off the main thread |
 | `SnapSettings.swift` / `SnapSettingsView.swift` | the `snap.` preferences and the pane |

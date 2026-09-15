@@ -191,6 +191,11 @@ final class ModifierDragController {
         else { return }
         guard target != session.written else { return }
 
+        // The first write of a gesture is the moment the window starts to
+        // change: remember its frame now, not when the combo went down, so a
+        // combination pressed without moving anything leaves Restore alone.
+        if session.written == nil { controller.rememberBeforeGesture(session.window) }
+
         if !session.raised, settings.bringToFront {
             session.raised = true
             raise(session.window)
