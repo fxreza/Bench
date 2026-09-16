@@ -23,6 +23,16 @@ public enum BenchDefaults {
         if isTestInstance, let suite = UserDefaults(suiteName: testSuiteName) { return suite }
         return .standard
     }()
+
+    /// The persistent domain `standard` is backed by: the test suite, the
+    /// bundle identifier, or (a bare executable outside any bundle) the
+    /// process name, which is what `UserDefaults.standard` uses then.
+    /// `SettingsSync` reads the domain directly so it sees only keys that
+    /// were actually stored, never values from `register(defaults:)`.
+    public static var domainName: String {
+        if isTestInstance { return testSuiteName }
+        return Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName
+    }
 }
 
 /// Where each module keeps its files.

@@ -236,32 +236,100 @@ final class SettingsManager: ObservableObject {
     /// affects files, never the clipboard credit.
     @Published var nameFilesAfterSourceApp: Bool { didSet { defaults.set(nameFilesAfterSourceApp, forKey: key(Key.nameFilesAfterSourceApp)) } }
 
+    private var syncObserver: NSObjectProtocol?
+
     private init() {
-        let defaults = self.defaults
+        let v = Self.readValues(from: defaults)
+        dimensionsInPixels = v.dimensionsInPixels
+        includeWindowShadow = v.includeWindowShadow
+        captureFormats = v.captureFormats
+        jpegQuality = v.jpegQuality
+        variantModifiers = v.variantModifiers
+        toolStyle = v.toolStyle
+        lastTool = v.lastTool
+        keepToolActive = v.keepToolActive
+        rememberLastTool = v.rememberLastTool
+        playCaptureSound = v.playCaptureSound
+        copyOnClose = v.copyOnClose
+        nameFilesAfterSourceApp = v.nameFilesAfterSourceApp
+        syncObserver = SettingsSync.observeApplied(prefix: Key.prefix) { [weak self] _ in
+            self?.reloadFromDefaults()
+        }
+    }
+
+    /// Every stored value, read in one place so `init` and
+    /// `reloadFromDefaults` cannot drift apart.
+    private struct Values {
+        var dimensionsInPixels: Bool
+        var includeWindowShadow: Bool
+        var captureFormats: [String: CaptureFileFormat]
+        var jpegQuality: Int
+        var variantModifiers: NSEvent.ModifierFlags
+        var toolStyle: ToolStyle
+        var lastTool: EditorTool
+        var keepToolActive: Bool
+        var rememberLastTool: Bool
+        var playCaptureSound: Bool
+        var copyOnClose: Bool
+        var nameFilesAfterSourceApp: Bool
+    }
+
+    private static func readValues(from defaults: UserDefaults) -> Values {
         func k(_ bare: String) -> String { Key.namespaced(bare) }
 
-        dimensionsInPixels = defaults.object(forKey: k(Key.dimensionsInPixels)) as? Bool ?? true
-        includeWindowShadow = defaults.object(forKey: k(Key.includeWindowShadow)) as? Bool ?? !ScreenshotDefaults.disableShadow
+        let captureFormats: [String: CaptureFileFormat]
         if let data = defaults.data(forKey: k(Key.captureFormats)),
            let stored = try? JSONDecoder().decode([String: CaptureFileFormat].self, from: data) {
             captureFormats = stored
         } else {
             captureFormats = [:]
         }
-        jpegQuality = Self.clampQuality(defaults.object(forKey: k(Key.jpegQuality)) as? Int ?? Self.defaultJPEGQuality)
+        let variantModifiers: NSEvent.ModifierFlags
         if let raw = defaults.object(forKey: k(Key.variantModifiers)) as? UInt {
             let flags = NSEvent.ModifierFlags(rawValue: raw).intersection(Self.allowedVariantModifiers)
             variantModifiers = flags.isEmpty ? Self.defaultVariantModifiers : flags
         } else {
             variantModifiers = Self.defaultVariantModifiers
         }
-        if let data = defaults.data(forKey: k(Key.toolStyle)), let s = try? JSONDecoder().decode(ToolStyle.self, from: data) { toolStyle = s } else { toolStyle = ToolStyle() }
-        lastTool = EditorTool(rawValue: defaults.string(forKey: k(Key.lastTool)) ?? "") ?? .arrow
-        keepToolActive = defaults.object(forKey: k(Key.keepToolActive)) as? Bool ?? false
-        rememberLastTool = defaults.object(forKey: k(Key.rememberLastTool)) as? Bool ?? false
-        playCaptureSound = defaults.object(forKey: k(Key.playSound)) as? Bool ?? true
-        copyOnClose = defaults.object(forKey: k(Key.copyOnClose)) as? Bool ?? false
-        nameFilesAfterSourceApp = defaults.object(forKey: k(Key.nameFilesAfterSourceApp)) as? Bool ?? true
+        let toolStyle: ToolStyle
+        if let data = defaults.data(forKey: k(Key.toolStyle)), let s = try? JSONDecoder().decode(ToolStyle.self, from: data) {
+            toolStyle = s
+        } else {
+            toolStyle = ToolStyle()
+        }
+        return Values(
+            dimensionsInPixels: defaults.object(forKey: k(Key.dimensionsInPixels)) as? Bool ?? true,
+            includeWindowShadow: defaults.object(forKey: k(Key.includeWindowShadow)) as? Bool ?? !ScreenshotDefaults.disableShadow,
+            captureFormats: captureFormats,
+            jpegQuality: Self.clampQuality(defaults.object(forKey: k(Key.jpegQuality)) as? Int ?? Self.defaultJPEGQuality),
+            variantModifiers: variantModifiers,
+            toolStyle: toolStyle,
+            lastTool: EditorTool(rawValue: defaults.string(forKey: k(Key.lastTool)) ?? "") ?? .arrow,
+            keepToolActive: defaults.object(forKey: k(Key.keepToolActive)) as? Bool ?? false,
+            rememberLastTool: defaults.object(forKey: k(Key.rememberLastTool)) as? Bool ?? false,
+            playCaptureSound: defaults.object(forKey: k(Key.playSound)) as? Bool ?? true,
+            copyOnClose: defaults.object(forKey: k(Key.copyOnClose)) as? Bool ?? false,
+            nameFilesAfterSourceApp: defaults.object(forKey: k(Key.nameFilesAfterSourceApp)) as? Bool ?? true
+        )
+    }
+
+    /// Re-reads every value after `SettingsSync` wrote another Mac's. Only a
+    /// value that actually differs is assigned, so the `didSet`s (and the
+    /// variant-modifier notification) fire only for real changes.
+    func reloadFromDefaults() {
+        let v = Self.readValues(from: defaults)
+        if v.dimensionsInPixels != dimensionsInPixels { dimensionsInPixels = v.dimensionsInPixels }
+        if v.includeWindowShadow != includeWindowShadow { includeWindowShadow = v.includeWindowShadow }
+        if v.captureFormats != captureFormats { captureFormats = v.captureFormats }
+        if v.jpegQuality != jpegQuality { jpegQuality = v.jpegQuality }
+        if v.variantModifiers != variantModifiers { variantModifiers = v.variantModifiers }
+        if v.toolStyle != toolStyle { toolStyle = v.toolStyle }
+        if v.lastTool != lastTool { lastTool = v.lastTool }
+        if v.keepToolActive != keepToolActive { keepToolActive = v.keepToolActive }
+        if v.rememberLastTool != rememberLastTool { rememberLastTool = v.rememberLastTool }
+        if v.playCaptureSound != playCaptureSound { playCaptureSound = v.playCaptureSound }
+        if v.copyOnClose != copyOnClose { copyOnClose = v.copyOnClose }
+        if v.nameFilesAfterSourceApp != nameFilesAfterSourceApp { nameFilesAfterSourceApp = v.nameFilesAfterSourceApp }
     }
 
     // MARK: - Snapper import

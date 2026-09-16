@@ -86,6 +86,35 @@ final class Settings: ObservableObject {
         lowBatteryThreshold = defaults.double(forKey: Key.lowBatteryThreshold.storageKey)
         hideInFullscreen = defaults.bool(forKey: Key.hideInFullscreen.storageKey)
         hideInMissionControl = defaults.bool(forKey: Key.hideInMissionControl.storageKey)
+        syncObserver = SettingsSync.observeApplied(prefix: "piko.") { [weak self] _ in
+            self?.reloadFromDefaults()
+        }
+    }
+
+    private var syncObserver: NSObjectProtocol?
+
+    /// Re-reads every value after `SettingsSync` wrote another Mac's. Only a
+    /// value that differs is assigned, so the `didSet`s fire for real
+    /// changes alone.
+    func reloadFromDefaults() {
+        func reload(_ key: Key, _ current: inout Bool) {
+            let stored = defaults.bool(forKey: key.storageKey)
+            if stored != current { current = stored }
+        }
+        func reload(_ key: Key, _ current: inout Double) {
+            let stored = defaults.double(forKey: key.storageKey)
+            if stored != current { current = stored }
+        }
+        reload(.volumeHUDEnabled, &volumeHUDEnabled)
+        reload(.brightnessHUDEnabled, &brightnessHUDEnabled)
+        reload(.nowPlayingEnabled, &nowPlayingEnabled)
+        reload(.connectivityEnabled, &connectivityEnabled)
+        reload(.lowBatteryEnabled, &lowBatteryEnabled)
+        reload(.hudDuration, &hudDuration)
+        reload(.alertDuration, &alertDuration)
+        reload(.lowBatteryThreshold, &lowBatteryThreshold)
+        reload(.hideInFullscreen, &hideInFullscreen)
+        reload(.hideInMissionControl, &hideInMissionControl)
     }
 
     private func save(_ key: Key, _ value: Any) {

@@ -177,6 +177,41 @@ final class SnapSettings: ObservableObject {
             ?? Defaults.resizeModifiers
         dragThreshold = defaults.object(forKey: Key.dragThreshold) as? Double ?? Defaults.dragThreshold
         bringToFront = defaults.object(forKey: Key.bringToFront) as? Bool ?? Defaults.bringToFront
+        syncObserver = SettingsSync.observeApplied(prefix: "snap.") { [weak self] _ in
+            self?.reloadFromDefaults()
+        }
+    }
+
+    private var syncObserver: NSObjectProtocol?
+
+    /// Re-reads every value after `SettingsSync` wrote another Mac's. Only a
+    /// value that differs is assigned, so the `didSet`s fire for real
+    /// changes alone.
+    func reloadFromDefaults() {
+        let newGap = defaults.object(forKey: Key.gap) as? Double ?? Defaults.gap
+        if newGap != gap { gap = newGap }
+        let newStep = defaults.object(forKey: Key.resizeStep) as? Double ?? Defaults.resizeStep
+        if newStep != resizeStep { resizeStep = newStep }
+        let newPercent = defaults.object(forKey: Key.almostMaximizePercent) as? Double ?? Defaults.almostMaximizePercent
+        if newPercent != almostMaximizePercent { almostMaximizePercent = newPercent }
+        let newTerminal = defaults.string(forKey: Key.terminalScript) ?? Defaults.terminalScript
+        if newTerminal != terminalScript { terminalScript = newTerminal }
+        let newDownloads = defaults.string(forKey: Key.downloadsScript) ?? Defaults.downloadsScript
+        if newDownloads != downloadsScript { downloadsScript = newDownloads }
+        let newLaunchers = (1...Self.launcherSlots).map { defaults.string(forKey: Key.launcher($0)) ?? "" }
+        if newLaunchers != launcherPaths { launcherPaths = newLaunchers }
+        let newDrag = defaults.object(forKey: Key.modifierDragEnabled) as? Bool ?? Defaults.modifierDragEnabled
+        if newDrag != modifierDragEnabled { modifierDragEnabled = newDrag }
+        let newMove = (defaults.object(forKey: Key.moveModifiers) as? UInt).map(NSEvent.ModifierFlags.init(rawValue:))
+            ?? Defaults.moveModifiers
+        if newMove != moveModifiers { moveModifiers = newMove }
+        let newResize = (defaults.object(forKey: Key.resizeModifiers) as? UInt).map(NSEvent.ModifierFlags.init(rawValue:))
+            ?? Defaults.resizeModifiers
+        if newResize != resizeModifiers { resizeModifiers = newResize }
+        let newThreshold = defaults.object(forKey: Key.dragThreshold) as? Double ?? Defaults.dragThreshold
+        if newThreshold != dragThreshold { dragThreshold = newThreshold }
+        let newFront = defaults.object(forKey: Key.bringToFront) as? Bool ?? Defaults.bringToFront
+        if newFront != bringToFront { bringToFront = newFront }
     }
 
     /// The gap as the geometry wants it: never negative, never so large that

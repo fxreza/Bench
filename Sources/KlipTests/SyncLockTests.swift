@@ -219,7 +219,7 @@ enum SyncLockTests {
             store.add(ClipboardItem(type: .text, textContent: "local only"))
             try expect(!sync.pushSynchronously(), "a disabled sync pushes nothing")
             try expect(
-                !FileManager.default.fileExists(atPath: cloud.appendingPathComponent("Klip").path),
+                !FileManager.default.fileExists(atPath: cloud.appendingPathComponent("Bench/Klip").path),
                 "and does not create Klip/ inside the container"
             )
         }

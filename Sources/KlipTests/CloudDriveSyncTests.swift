@@ -96,7 +96,7 @@ enum CloudDriveSyncTests {
     }
 
     static func klipRoot(_ cloud: URL) -> URL {
-        cloud.appendingPathComponent("Klip", isDirectory: true)
+        cloud.appendingPathComponent("Bench/Klip", isDirectory: true)
     }
 
     static func deviceDir(_ cloud: URL, _ device: String) -> URL {

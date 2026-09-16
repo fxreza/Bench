@@ -1898,9 +1898,7 @@ class ClipboardStore: ObservableObject {
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             return url
         }
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        return CloudDrive.containerRoot
     }
 
     // MARK: Storage locations the sync service mirrors

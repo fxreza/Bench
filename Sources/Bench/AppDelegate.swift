@@ -47,6 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar = StatusBarController()
         menuBarSeparators = MenuBarSeparators()
         FeatureRegistry.shared.startEnabled()
+        // After the features: they register their extra synced values
+        // (Lingo's API key) while being constructed.
+        SettingsSync.shared.startIfEnabled()
 
         warnAboutStandaloneAppsIfNeeded()
         runFirstLaunchIfNeeded()
@@ -69,6 +72,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         FeatureRegistry.shared.stopAll()
+        // Any edit still inside the push debounce goes out now, bounded so
+        // quitting never waits on iCloud.
+        SettingsSync.shared.stopAndFlush(budget: 2.0)
     }
 
     /// Relaunching Bench (from Finder, Spotlight or `open`) while it is

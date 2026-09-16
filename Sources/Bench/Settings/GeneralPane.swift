@@ -8,8 +8,12 @@ struct GeneralPane: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var appearance = AppearanceSettings.shared
     @ObservedObject private var registry = FeatureRegistry.shared
+    @ObservedObject private var sync = SettingsSync.shared
     @StateObject private var dock = DockSpacerModel()
     @State private var launchAtLoginError: String?
+    @State private var now = Date()
+
+    private let ticker = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
         Form {
@@ -74,6 +78,53 @@ struct GeneralPane: View {
                 }
             }
 
+            Section("iCloud Sync") {
+                Toggle("Sync settings across your Macs", isOn: $sync.isEnabled)
+                    .disabled(!sync.isAvailable)
+
+                if let reason = sync.unavailableReason {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else {
+                    Text("Every module's settings and shortcuts are mirrored into the Bench/Settings folder in iCloud Drive. Each Mac writes only its own file, and for each setting the latest change wins. Klip's clipboard history has its own switch under Klip > Sync.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 10) {
+                    Text(syncStatusLine)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Sync Now") { sync.syncNow() }
+                        .buttonStyle(.bordered)
+                        .disabled(!sync.isEnabled || !sync.isAvailable || sync.isBusy)
+                }
+
+                if let error = sync.lastError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                TextField("This Mac's name", text: $sync.deviceName)
+                Text("Shown in the sync status on your other Macs.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button("Remove This Mac's Settings from iCloud") {
+                    sync.removeThisDeviceFromCloud()
+                }
+                .disabled(!sync.isAvailable)
+                Text("Deletes only this Mac's file in the Bench/Settings folder. Nothing on this Mac changes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Modules") {
                 ForEach(registry.features, id: \.id) { feature in
                     VStack(alignment: .leading, spacing: 2) {
@@ -90,8 +141,22 @@ struct GeneralPane: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { dock.startWatching() }
+        .onReceive(ticker) { now = $0 }
+        .onAppear {
+            now = Date()
+            dock.startWatching()
+        }
         .onDisappear { dock.stopWatching() }
+    }
+
+    private var syncStatusLine: String {
+        CloudSyncStatusLine.text(
+            enabled: sync.isEnabled,
+            available: sync.isAvailable,
+            lastPush: sync.lastPush,
+            lastPull: sync.lastPull,
+            devices: sync.otherDevices.map { $0.name },
+            now: now)
     }
 
     // MARK: - Bindings

@@ -1,4 +1,5 @@
 import SwiftUI
+import BenchCore
 
 /// Settings > Sync (Phase 4A). Everything about iCloud Drive sync lives here:
 /// the master toggle (disabled, with the reason, when iCloud Drive is not set
@@ -39,8 +40,8 @@ struct SyncTab: View {
                         .foregroundStyle(.orange)
                 } else {
                     Text(Features.tagsEnabled
-                         ? "Your history is mirrored into a Klip folder in iCloud Drive. Each Mac writes only its own snapshot, so nothing is ever overwritten; deletes, locks, tags and folders travel with it."
-                         : "Your history is mirrored into a Klip folder in iCloud Drive. Each Mac writes only its own snapshot, so nothing is ever overwritten; deletes, locks and folders travel with it.")
+                         ? "Your history is mirrored into the Bench/Klip folder in iCloud Drive. Each Mac writes only its own snapshot, so nothing is ever overwritten; deletes, locks, tags and folders travel with it."
+                         : "Your history is mirrored into the Bench/Klip folder in iCloud Drive. Each Mac writes only its own snapshot, so nothing is ever overwritten; deletes, locks and folders travel with it.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -139,7 +140,7 @@ struct SyncTab: View {
                 }
                 .disabled(!sync.isAvailable)
 
-                Text("Removing this Mac's copy leaves shared attachments in place; removing all data deletes the whole Klip folder from iCloud Drive. Neither touches the history on this Mac.")
+                Text("Removing this Mac's copy leaves shared attachments in place; removing all data deletes the whole Bench/Klip folder from iCloud Drive. Neither touches the history on this Mac.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -217,7 +218,7 @@ struct SyncTab: View {
             Text("Remove all Klip cloud data?")
                 .font(.klip(.sidebarTitle).bold())
 
-            Text("This deletes the entire Klip folder from iCloud Drive: every Mac's snapshot and every synced image, text and file. Your history on this Mac is not touched, but your other Macs lose anything they have not already downloaded.")
+            Text("This deletes the entire Bench/Klip folder from iCloud Drive: every Mac's snapshot and every synced image, text and file. Your history on this Mac is not touched, but your other Macs lose anything they have not already downloaded.")
                 .font(.klip(.caption))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -279,9 +280,9 @@ enum SyncAttachmentCap {
 
 // MARK: - Status line text
 
-/// The one-line sync summary, as a pure function so it can be tested without
-/// SwiftUI: "Last push 2 minutes ago · last pull 1 minute ago · 2 devices:
-/// MacBook, Studio".
+/// The one-line sync summary. The text itself is `CloudSyncStatusLine` in
+/// BenchCore, shared with the settings sync; this keeps Klip's call sites
+/// and tests unchanged.
 enum SyncStatusLine {
     static func text(
         enabled: Bool,
@@ -291,37 +292,12 @@ enum SyncStatusLine {
         devices: [String],
         now: Date = Date()
     ) -> String {
-        guard available else { return "iCloud Drive is not available on this Mac." }
-        guard enabled else { return "Sync is off." }
-
-        var parts: [String] = []
-        parts.append(lastPush.map { "Last push \(ago(from: $0, to: now))" } ?? "Not pushed yet")
-        parts.append(lastPull.map { "last pull \(ago(from: $0, to: now))" } ?? "not pulled yet")
-
-        if devices.isEmpty {
-            parts.append("no other devices yet")
-        } else {
-            let noun = devices.count == 1 ? "device" : "devices"
-            parts.append("\(devices.count) \(noun): \(devices.joined(separator: ", "))")
-        }
-        return parts.joined(separator: " · ")
+        CloudSyncStatusLine.text(
+            enabled: enabled, available: available, lastPush: lastPush, lastPull: lastPull,
+            devices: devices, now: now)
     }
 
-    /// Coarse relative time — the status line is glanced at, not read.
     static func ago(from date: Date, to now: Date) -> String {
-        let seconds = max(0, now.timeIntervalSince(date))
-        switch seconds {
-        case ..<10: return "just now"
-        case ..<60: return "\(Int(seconds)) sec ago"
-        case ..<3600:
-            let minutes = Int(seconds / 60)
-            return "\(minutes) min ago"
-        case ..<86400:
-            let hours = Int(seconds / 3600)
-            return "\(hours) hour\(hours == 1 ? "" : "s") ago"
-        default:
-            let days = Int(seconds / 86400)
-            return "\(days) day\(days == 1 ? "" : "s") ago"
-        }
+        CloudSyncStatusLine.ago(from: date, to: now)
     }
 }

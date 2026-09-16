@@ -95,9 +95,22 @@ public final class AppearanceSettings: ObservableObject {
         }
     }
 
+    private var syncObserver: NSObjectProtocol?
+
     private init() {
         accentTheme = AccentTheme(rawValue: defaults.string(forKey: Self.accentKey) ?? "") ?? .system
         colorScheme = AppColorScheme(rawValue: defaults.string(forKey: Self.schemeKey) ?? "") ?? .system
+        syncObserver = SettingsSync.observeApplied(prefix: "bench.appearance.") { [weak self] _ in
+            self?.reloadFromDefaults()
+        }
+    }
+
+    /// Re-reads both choices after `SettingsSync` wrote another Mac's.
+    public func reloadFromDefaults() {
+        let accent = AccentTheme(rawValue: defaults.string(forKey: Self.accentKey) ?? "") ?? .system
+        let scheme = AppColorScheme(rawValue: defaults.string(forKey: Self.schemeKey) ?? "") ?? .system
+        if accent != accentTheme { accentTheme = accent }
+        if scheme != colorScheme { colorScheme = scheme }
     }
 
     public func apply() {

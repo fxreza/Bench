@@ -86,6 +86,26 @@ are the reusable Settings rows.
   for preferences (`com.fxreza.klip`, `com.fxreza.snapper`, `com.fxreza.transi`)
   and `StandaloneImport.importDirectoryIfEmpty(from:to:)` for data folders.
 
+## iCloud Drive
+
+Everything Bench puts in iCloud Drive sits under one folder, `CloudDrive`
+in BenchCore: `iCloud Drive/Bench/Klip` (Klip's `CloudDriveSync`, history and
+attachments) and `iCloud Drive/Bench/Settings` (`SettingsSync`). No
+CloudKit, no entitlements: plain files that macOS keeps in sync.
+`BENCH_CLOUD_ROOT` replaces the container for tests and local instances.
+
+`SettingsSync` mirrors the synced part of `BenchDefaults.standard` (every
+prefixed key except `SettingsSync.excludedKeys`, the per-Mac identities and
+flags) plus whatever a `SettingsSyncContributor` offers (Lingo's API key).
+Each Mac writes only `devices/<id>/settings.plist`; every entry is
+`{value, modified, origin}` and the latest `modified` wins, `origin` breaking
+ties, so all Macs converge. Local edits are noticed through
+`UserDefaults.didChangeNotification` and stamped in a state file under
+`Application Support/Bench/SettingsSync`. When a remote value is written,
+`.benchSettingsSyncApplied` carries the keys; every settings store observes
+its prefix through `SettingsSync.observeApplied(prefix:)` and re-reads, so
+the change shows up live.
+
 ## Permissions and appearance
 
 `PermissionsState.shared` polls Accessibility and Screen Recording and

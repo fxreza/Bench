@@ -32,9 +32,22 @@ final class HistoryStore: ObservableObject {
             keys: ["translationHistory": storageKey],
             flagKey: "lingo.importedHistoryFromTransi")
 
+        load()
+        syncObserver = SettingsSync.observeApplied(prefix: storageKey) { [weak self] _ in
+            self?.load()
+        }
+    }
+
+    private var syncObserver: NSObjectProtocol?
+
+    /// Reads the stored list; also re-run when `SettingsSync` wrote another
+    /// Mac's history.
+    private func load() {
         if let data = defaults.data(forKey: storageKey),
            let stored = try? JSONDecoder().decode([HistoryEntry].self, from: data) {
-            entries = stored
+            if stored != entries { entries = stored }
+        } else if !entries.isEmpty {
+            entries = []
         }
     }
 

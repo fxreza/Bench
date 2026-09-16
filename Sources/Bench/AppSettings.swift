@@ -86,6 +86,8 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    private var syncObserver: NSObjectProtocol?
+
     private init() {
         // Update checking is on unless the user turned it off; everything else
         // defaults to false, which `bool(forKey:)` already gives.
@@ -94,5 +96,22 @@ final class AppSettings: ObservableObject {
         autoCheckUpdates = defaults.bool(forKey: Key.autoCheckUpdates)
         includePrereleases = defaults.bool(forKey: Key.includePrereleases)
         menuBarSeparatorCount = min(max(defaults.integer(forKey: Key.menuBarSeparatorCount), 0), 5)
+        syncObserver = SettingsSync.observeApplied(prefix: "bench.") { [weak self] _ in
+            self?.reloadFromDefaults()
+        }
+    }
+
+    /// Re-reads every published value after `SettingsSync` wrote another
+    /// Mac's. Each `didSet` writes the same value back, which the sync sees
+    /// as no change, and posts its notification only when something moved.
+    func reloadFromDefaults() {
+        let hide = defaults.bool(forKey: Key.hideMenuBarIcon)
+        if hide != hideMenuBarIcon { hideMenuBarIcon = hide }
+        let auto = defaults.bool(forKey: Key.autoCheckUpdates)
+        if auto != autoCheckUpdates { autoCheckUpdates = auto }
+        let pre = defaults.bool(forKey: Key.includePrereleases)
+        if pre != includePrereleases { includePrereleases = pre }
+        let separators = min(max(defaults.integer(forKey: Key.menuBarSeparatorCount), 0), 5)
+        if separators != menuBarSeparatorCount { menuBarSeparatorCount = separators }
     }
 }

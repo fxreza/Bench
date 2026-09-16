@@ -33,6 +33,9 @@ public final class LingoFeature: BenchFeature {
 
     public init() {
         menuTarget.controller = controller
+        // The API key travels with the settings whether or not the module is
+        // switched on, so this is registered at construction, not `start()`.
+        SettingsSync.shared.register(LingoSecretsSync.shared)
     }
 
     public func start() { controller.start() }

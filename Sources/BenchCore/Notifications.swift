@@ -11,6 +11,16 @@ public extension Notification.Name {
 
     /// Posted by `AppearanceSettings` after the accent or color scheme changes.
     static let benchAppearanceChanged = Notification.Name("bench.appearanceChanged")
+
+    /// Posted by `SettingsSync` after values from another Mac were written
+    /// to `UserDefaults` (or handed to a contributor). `userInfo["keys"]` is
+    /// the sorted `[String]` of affected keys; stores re-read their own
+    /// through `SettingsSync.observeApplied(prefix:handler:)`.
+    static let benchSettingsSyncApplied = Notification.Name("bench.settingsSyncApplied")
+
+    /// Posted by a `SettingsSyncContributor` after one of its values changed
+    /// locally, so the next push includes it.
+    static let benchSyncedExtrasChanged = Notification.Name("bench.syncedExtrasChanged")
 }
 
 public extension Notification.Name {

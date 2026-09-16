@@ -37,15 +37,39 @@ public final class ShortcutStore: ObservableObject {
     /// when they only read through `binding(for:)`.
     @Published public private(set) var version = 0
 
+    private var syncObserver: NSObjectProtocol?
+
     public init(defaults: UserDefaults = BenchDefaults.standard) {
         self.defaults = defaults
+        load()
+        syncObserver = SettingsSync.observeApplied(prefix: "bench.shortcuts.") { [weak self] _ in
+            self?.reloadFromDefaults()
+        }
+    }
+
+    deinit {
+        if let syncObserver { NotificationCenter.default.removeObserver(syncObserver) }
+    }
+
+    private func load() {
         if let data = defaults.data(forKey: Self.overridesKey),
            let stored = try? JSONDecoder().decode([String: KeyBinding].self, from: data) {
             overrides = stored
+        } else {
+            overrides = [:]
         }
         if let stored = defaults.stringArray(forKey: Self.unboundKey) {
             unbound = Set(stored)
+        } else {
+            unbound = []
         }
+    }
+
+    /// Re-reads the overrides after `SettingsSync` wrote another Mac's, and
+    /// tells `HotkeyCenter` to re-register.
+    public func reloadFromDefaults() {
+        load()
+        notify(nil)
     }
 
     // MARK: - Registration

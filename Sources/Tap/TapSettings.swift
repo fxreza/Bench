@@ -75,12 +75,24 @@ final class TapSettings: ObservableObject {
     }
 
     private let defaults: UserDefaults
+    private var syncObserver: NSObjectProtocol?
 
     init(defaults: UserDefaults = BenchDefaults.standard) {
         self.defaults = defaults
         let stored = defaults.string(forKey: Key.middleClickMode)
         mode = stored.flatMap(MiddleClickMode.init(rawValue:)) ?? .default
         fnClickEnabled = defaults.object(forKey: Key.fnClick) as? Bool ?? true
+        syncObserver = SettingsSync.observeApplied(prefix: "tap.") { [weak self] _ in
+            self?.reloadFromDefaults()
+        }
+    }
+
+    /// Re-reads both values after `SettingsSync` wrote another Mac's.
+    func reloadFromDefaults() {
+        let storedMode = defaults.string(forKey: Key.middleClickMode).flatMap(MiddleClickMode.init(rawValue:)) ?? .default
+        if storedMode != mode { mode = storedMode }
+        let storedFn = defaults.object(forKey: Key.fnClick) as? Bool ?? true
+        if storedFn != fnClickEnabled { fnClickEnabled = storedFn }
     }
 }
 

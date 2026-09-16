@@ -1,16 +1,18 @@
 import Foundation
 import Combine
+import BenchCore
 
 /// iCloud Drive file sync (Phase 4A, decision D7 — no CloudKit, no
 /// entitlements, no sandbox).
 ///
 /// The local store at `~/Library/Application Support/Bench/Klip` stays authoritative.
 /// This service *mirrors* it into
-/// `~/Library/Mobile Documents/com~apple~CloudDocs/Klip/` and merges what the
+/// `~/Library/Mobile Documents/com~apple~CloudDocs/Bench/Klip/` (the
+/// `CloudDrive` folder shared with the settings sync) and merges what the
 /// other Macs put there:
 ///
 /// ```
-/// Klip/
+/// Bench/Klip/
 ///   devices/<deviceID>/history.json     {"version":1,"device":{…},"items":[…]}
 ///   devices/<deviceID>/folders.json     {"version":1,"folders":[…]}
 ///   devices/<deviceID>/tombstones.json  {"version":1,"deleted":[…],"deletedFolders":[…]}
@@ -115,7 +117,11 @@ final class CloudDriveSync: ObservableObject {
         isAvailable ? nil : "Sign in to iCloud and enable iCloud Drive in System Settings."
     }
 
-    var klipRoot: URL? { cloudRoot?.appendingPathComponent("Klip", isDirectory: true) }
+    /// `iCloud Drive/Bench/Klip`. The history used to sit at
+    /// `iCloud Drive/Klip`; `ensureCloudDirectories` moves that folder into
+    /// place once, so nothing already synced is lost or copied.
+    var klipRoot: URL? { cloudRoot.map { CloudDrive.folder(named: Self.folderName, in: $0) } }
+    static let folderName = "Klip"
     private var devicesRoot: URL? { klipRoot?.appendingPathComponent("devices", isDirectory: true) }
     private var ownDeviceDir: URL? { devicesRoot?.appendingPathComponent(deviceID, isDirectory: true) }
 
@@ -765,7 +771,7 @@ final class CloudDriveSync: ObservableObject {
         }
     }
 
-    /// Deletes the whole `Klip/` folder from iCloud Drive — every device's
+    /// Deletes the whole `Bench/Klip/` folder from iCloud Drive — every device's
     /// snapshot and every synced asset. The local history is untouched.
     func removeAllCloudData() {
         guard let root = klipRoot else { return }
@@ -854,14 +860,17 @@ final class CloudDriveSync: ObservableObject {
 
     // MARK: - Coordinated file I/O
 
-    /// Creates `Klip/` and its subdirectories **inside an existing** iCloud
+    /// Creates `Bench/Klip/` and its subdirectories **inside an existing** iCloud
     /// Drive container. Never creates the container itself (4B #10): when
     /// `com~apple~CloudDocs` is not there, iCloud Drive is off and a
     /// `withIntermediateDirectories` create would silently manufacture a
     /// look-alike local folder that is not synced by anything.
     private func ensureCloudDirectories() {
-        guard isAvailable else { return }
+        guard isAvailable, let cloudRoot = cloudRoot else { return }
         guard let klipRoot = klipRoot, let devicesRoot = devicesRoot, let ownDeviceDir = ownDeviceDir else { return }
+        // Builds before 0.3.3 synced to `iCloud Drive/Klip`; the first cycle
+        // moves that folder into `Bench/` before anything is created there.
+        CloudDrive.migrateLegacyFolder(named: Self.folderName, in: cloudRoot)
         try? createDirectory(klipRoot)
         try? createDirectory(devicesRoot)
         try? createDirectory(ownDeviceDir)

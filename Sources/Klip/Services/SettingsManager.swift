@@ -422,68 +422,86 @@ final class SettingsManager: ObservableObject {
 
     // ==================== end Phase 4A settings ====================
 
+    private var syncObserver: NSObjectProtocol?
+
     private init() {
-        // Load history limit. Read as an object, not `integer(forKey:)`, so an
-        // absent key is distinguishable from a stored 0 (= unlimited).
-        self.historyLimit = HistoryLimit.from(storedRaw: object(forKey: "historyLimit") as? Int)
-        
-        // Load trash retention. Read as an object for the same reason as the
-        // history limit above: a stored 0 means "forever", not "unset".
-        self.trashRetention = TrashRetention.from(storedRaw: object(forKey: "trashRetention") as? Int)
+        load()
+        isLoaded = true
+        syncObserver = SettingsSync.observeApplied(prefix: Key.prefix) { [weak self] _ in
+            self?.reloadFromDefaults()
+        }
+    }
 
-        // Load appearance / layout settings
-        if let raw = object(forKey: "fontScale.list") as? Double {
-            self.listFontScale = raw
-        }
-        if let raw = object(forKey: "fontScale.preview") as? Double {
-            self.previewFontScale = raw
-        }
-        if object(forKey: "appearance.showPreview") != nil {
-            self.showPreviewPane = bool(forKey: "appearance.showPreview")
-        }
-        if object(forKey: "sidebarCollapsed") != nil {
-            self.sidebarCollapsed = bool(forKey: "sidebarCollapsed")
-        }
-        if let raw = object(forKey: "sidebarWidth") as? Double {
-            self.sidebarWidth = raw
-        }
-        if let raw = object(forKey: "previewWidth") as? Double {
-            self.previewWidth = raw
-        }
-        self.windowWidth = object(forKey: "windowWidth") as? Double
-        self.windowHeight = object(forKey: "windowHeight") as? Double
+    /// Reads every stored value, falling back to the property's own default
+    /// for an absent key. Runs with `isLoaded` false, so nothing is written
+    /// back and no notification fires.
+    private func load() {
+        // History limit and trash retention are read as objects, not
+        // `integer(forKey:)`, so an absent key is distinguishable from a
+        // stored 0 (= unlimited / forever).
+        historyLimit = HistoryLimit.from(storedRaw: object(forKey: "historyLimit") as? Int)
+        trashRetention = TrashRetention.from(storedRaw: object(forKey: "trashRetention") as? Int)
 
-        if let raw = object(forKey: "files.copyCapMB") as? Int {
-            self.fileCopyCapMB = raw
-        }
+        // Appearance / layout
+        listFontScale = object(forKey: "fontScale.list") as? Double ?? 1.0
+        previewFontScale = object(forKey: "fontScale.preview") as? Double ?? 1.0
+        showPreviewPane = object(forKey: "appearance.showPreview") != nil ? bool(forKey: "appearance.showPreview") : true
+        sidebarCollapsed = object(forKey: "sidebarCollapsed") != nil ? bool(forKey: "sidebarCollapsed") : false
+        sidebarWidth = object(forKey: "sidebarWidth") as? Double ?? 180
+        previewWidth = object(forKey: "previewWidth") as? Double ?? 300
+        windowWidth = object(forKey: "windowWidth") as? Double
+        windowHeight = object(forKey: "windowHeight") as? Double
 
-        self.alwaysPastePlain = bool(forKey: "paste.alwaysPlain")
+        fileCopyCapMB = object(forKey: "files.copyCapMB") as? Int ?? 50
+        alwaysPastePlain = bool(forKey: "paste.alwaysPlain")
 
-        // Window behaviour. Both default to false via `bool(forKey:)` on an
+        // Window behaviour. Each defaults to false via `bool(forKey:)` on an
         // absent key, which is the wanted default for each.
-        self.keepSearchBetweenOpens = bool(forKey: "search.keepBetweenOpens")
-        self.keepWindowOpen = bool(forKey: "window.keepOpen")
-        self.rememberWindowPosition = bool(forKey: "window.rememberPosition")
-        if rememberWindowPosition {
-            self.windowOriginX = object(forKey: "window.originX") as? Double
-            self.windowOriginY = object(forKey: "window.originY") as? Double
-        }
+        keepSearchBetweenOpens = bool(forKey: "search.keepBetweenOpens")
+        keepWindowOpen = bool(forKey: "window.keepOpen")
+        rememberWindowPosition = bool(forKey: "window.rememberPosition")
+        windowOriginX = rememberWindowPosition ? object(forKey: "window.originX") as? Double : nil
+        windowOriginY = rememberWindowPosition ? object(forKey: "window.originY") as? Double : nil
+
         // --- Phase 4A: iCloud Drive sync ---
-        self.syncEnabled = bool(forKey: "sync.enabled")
-        if let raw = object(forKey: "sync.maxAttachmentMB") as? Int {
-            self.syncMaxAttachmentMB = raw
-        }
+        syncEnabled = bool(forKey: "sync.enabled")
+        syncMaxAttachmentMB = object(forKey: "sync.maxAttachmentMB") as? Int ?? 50
         if let name = string(forKey: "sync.deviceName"), !name.isEmpty {
-            self.syncDeviceName = name
+            syncDeviceName = name
+        } else {
+            syncDeviceName = SettingsManager.defaultDeviceName
         }
         // Absent key = every kind syncs, so an update from a build without
         // this setting keeps syncing exactly what it synced before.
         if let raw = array(forKey: "sync.kinds") as? [String] {
-            self.syncedKinds = Set(raw.compactMap { ContentKind(rawValue: $0) })
+            syncedKinds = Set(raw.compactMap { ContentKind(rawValue: $0) })
+        } else {
+            syncedKinds = SyncKindFilter.all
         }
         // --- end Phase 4A ---
+    }
 
+    /// Re-reads everything after `SettingsSync` wrote another Mac's values,
+    /// then posts the notifications a live change would have posted.
+    func reloadFromDefaults() {
+        let oldHistoryLimit = historyLimit
+        let oldTrashRetention = trashRetention
+        let oldSyncedKinds = syncedKinds
+        let oldMaxAttachment = syncMaxAttachmentMB
+
+        isLoaded = false
+        load()
         isLoaded = true
+
+        if historyLimit != oldHistoryLimit {
+            NotificationCenter.default.post(name: .bufferHistoryLimitChanged, object: nil)
+        }
+        if trashRetention != oldTrashRetention {
+            NotificationCenter.default.post(name: .bufferTrashRetentionChanged, object: nil)
+        }
+        if syncedKinds != oldSyncedKinds || syncMaxAttachmentMB != oldMaxAttachment {
+            NotificationCenter.default.post(name: .klipSyncSettingsChanged, object: nil)
+        }
     }
 }
 

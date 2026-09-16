@@ -61,17 +61,27 @@ enum KeychainStore {
     @discardableResult
     static func save(_ value: String, for key: Key) -> Bool {
         cacheLock.lock()
-        defer { cacheLock.unlock() }
         let ok = writeFile(value, for: key)
         if ok { cache[key] = value }
+        cacheLock.unlock()
+        if ok { noteChanged() }
         return ok
     }
 
     static func delete(_ key: Key) {
         cacheLock.lock()
-        defer { cacheLock.unlock() }
         try? FileManager.default.removeItem(at: fileURL(for: key))
         cache[key] = String?.none
+        cacheLock.unlock()
+        noteChanged()
+    }
+
+    /// Tells `SettingsSync` a value moved, so the next push carries it
+    /// (`LingoSecretsSync` offers the keys to the sync).
+    private static func noteChanged() {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .benchSyncedExtrasChanged, object: nil)
+        }
     }
 
     // MARK: - File I/O

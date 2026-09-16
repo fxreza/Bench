@@ -31,7 +31,7 @@ press, so the same key with ⌥ writes a JPG instead of a PNG.
 Everything you copy, searchable, with folders, tags, pinning and a trash.
 Handles text, rich text, images, colors and files, keeps a preview of each, and
 pastes straight back into the app you were in. Syncs between your Macs through
-iCloud Drive when you turn that on.
+iCloud Drive (the `Bench/Klip` folder) when you turn that on.
 
 | Action | Shortcut |
 |---|---|

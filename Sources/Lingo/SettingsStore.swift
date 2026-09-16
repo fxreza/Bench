@@ -191,26 +191,12 @@ final class SettingsStore: ObservableObject {
     /// passes its own private `UserDefaults(suiteName:)` so the pair/direction
     /// logic below can be exercised without touching real preferences — same
     /// pattern as `BenchCore.ShortcutStore`.
+    private var syncObserver: NSObjectProtocol?
+
     init(defaults: UserDefaults = BenchDefaults.standard) {
         self.defaults = defaults
         Self.importFromTransiIfNeeded()
 
-        if let raw = defaults.string(forKey: "lingo.targetLanguage"), LanguageCatalog.byCode[raw] != nil {
-            targetLanguage = raw
-        }
-        if let raw = defaults.string(forKey: "lingo.secondaryLanguage"), LanguageCatalog.byCode[raw] != nil {
-            secondaryLanguage = raw
-        } else {
-            // No stored secondary: pair whatever target we ended up with
-            // against the system-derived partner.
-            secondaryLanguage = Self.partnerForFirstRun(of: targetLanguage)
-        }
-        if let stored = defaults.array(forKey: "lingo.enabledLanguages") as? [String] {
-            enabledLanguageCodes = stored.filter { LanguageCatalog.byCode[$0] != nil }
-        }
-        if enabledLanguageCodes.isEmpty {
-            enabledLanguageCodes = [targetLanguage, secondaryLanguage]
-        }
         // One-time repair: the popup's source picker used to write every pick
         // straight into this setting, so a stored fixed source is far more
         // likely to be an accident from that than a deliberate choice — and a
@@ -222,11 +208,46 @@ final class SettingsStore: ObservableObject {
             defaults.set(true, forKey: "lingo.didResetStickySourceLanguage")
             defaults.removeObject(forKey: "lingo.sourceLanguage")
         }
+
+        load()
+        isLoaded = true
+        syncObserver = SettingsSync.observeApplied(prefix: "lingo.") { [weak self] _ in
+            self?.reloadFromDefaults()
+        }
+    }
+
+    /// Reads every stored value, falling back to the property's own default
+    /// for an absent key. Runs with `isLoaded` false, so nothing is written
+    /// back.
+    private func load() {
+        if let raw = defaults.string(forKey: "lingo.targetLanguage"), LanguageCatalog.byCode[raw] != nil {
+            targetLanguage = raw
+        } else {
+            targetLanguage = Self.systemDefaultPair.target
+        }
+        if let raw = defaults.string(forKey: "lingo.secondaryLanguage"), LanguageCatalog.byCode[raw] != nil {
+            secondaryLanguage = raw
+        } else {
+            // No stored secondary: pair whatever target we ended up with
+            // against the system-derived partner.
+            secondaryLanguage = Self.partnerForFirstRun(of: targetLanguage)
+        }
+        if let stored = defaults.array(forKey: "lingo.enabledLanguages") as? [String] {
+            enabledLanguageCodes = stored.filter { LanguageCatalog.byCode[$0] != nil }
+        } else {
+            enabledLanguageCodes = []
+        }
+        if enabledLanguageCodes.isEmpty {
+            enabledLanguageCodes = [targetLanguage, secondaryLanguage]
+        }
         if let raw = defaults.string(forKey: "lingo.sourceLanguage"),
            raw == LanguageCatalog.autoCode || LanguageCatalog.byCode[raw] != nil {
             sourceLanguage = raw
+        } else {
+            sourceLanguage = LanguageCatalog.autoCode
         }
 
+        engineOrder = [.google, .bing, .gemini]
         if let stored = defaults.array(forKey: "lingo.engineOrder") as? [String] {
             let decoded = stored.compactMap(EngineID.init(rawValue:))
             // Engines added in later versions append at the end rather than
@@ -238,33 +259,50 @@ final class SettingsStore: ObservableObject {
         if let stored = defaults.array(forKey: "lingo.enabledEngines") as? [String] {
             enabledEngines = Set(stored.compactMap(EngineID.init(rawValue:)))
             if enabledEngines.isEmpty { enabledEngines = [.google] }
+        } else {
+            enabledEngines = [.google, .bing]
         }
         if let stored = defaults.dictionary(forKey: "lingo.perLanguageEngineOverride") as? [String: String] {
             perLanguageEngineOverride = stored.compactMapValues(EngineID.init(rawValue:))
+        } else {
+            perLanguageEngineOverride = [:]
         }
         if let raw = defaults.string(forKey: "lingo.translationTone"), let stored = TranslationTone(rawValue: raw) {
             tone = stored
+        } else {
+            tone = .standard
         }
         if let raw = defaults.string(forKey: "lingo.geminiModel"), !raw.isEmpty {
             geminiModel = raw
+        } else {
+            geminiModel = GeminiEngine.defaultModel
         }
         if let raw = defaults.string(forKey: "lingo.geminiThinking"),
            let stored = GeminiThinking(rawValue: raw) {
             geminiThinking = stored
+        } else {
+            geminiThinking = .low
         }
         hasAcknowledgedGeminiPrivacyNote = defaults.bool(forKey: "lingo.geminiPrivacyNoteAcknowledged")
 
         let storedTextSize = defaults.double(forKey: "lingo.popupTextSize")
-        if storedTextSize > 0 { popupTextSize = min(max(storedTextSize, 0.8), 1.6) }
+        popupTextSize = storedTextSize > 0 ? min(max(storedTextSize, 0.8), 1.6) : 1.0
 
         largePopupControls = defaults.bool(forKey: "lingo.largePopupControls")
         showTransliteration = defaults.bool(forKey: "lingo.showTransliteration")
         if defaults.object(forKey: "lingo.autoDismissEnabled") != nil {
             autoDismissEnabled = defaults.bool(forKey: "lingo.autoDismissEnabled")
+        } else {
+            autoDismissEnabled = true
         }
         let storedDelay = defaults.double(forKey: "lingo.autoDismissDelay")
-        if storedDelay > 0 { autoDismissDelay = min(max(storedDelay, 0.5), 10) }
+        autoDismissDelay = storedDelay > 0 ? min(max(storedDelay, 0.5), 10) : 2.0
+    }
 
+    /// Re-reads everything after `SettingsSync` wrote another Mac's values.
+    func reloadFromDefaults() {
+        isLoaded = false
+        load()
         isLoaded = true
     }
 

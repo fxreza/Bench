@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.3 (2026-09-15)
+
+### Added
+
+- Settings sync through iCloud Drive, under Settings > General > iCloud Sync. Every module's settings, the shortcuts, the module on/off switches, the appearance, Lingo's translation history and its Gemini API key travel between your Macs; only what describes one Mac stays put (device names, sync timestamps, onboarding and import flags, update bookkeeping). Each Mac writes only its own file, `Bench/Settings/devices/<id>/settings.plist`, and for each setting the latest change wins, so nothing is ever overwritten by an older copy. A change made on one Mac shows up live on the other, shortcuts and module switches included. Off by default; separate from Klip's history sync.
+
+### Changed
+
+- Everything Bench keeps in iCloud Drive now lives in one `Bench` folder: `Bench/Klip` for the clipboard history and `Bench/Settings` for the settings. The first sync cycle moves an existing `iCloud Drive/Klip` folder into `Bench/Klip` in place, so already-synced history is neither lost nor copied. A standalone Klip.app still syncing to the old location no longer shares history with Bench.
+
 ## 0.3.2 (2026-09-15)
 
 ### Added

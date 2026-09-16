@@ -66,10 +66,29 @@ public final class FeatureRegistry: ObservableObject {
     @Published public private(set) var features: [BenchFeature] = []
     @Published public private(set) var enabledIDs: Set<String> = []
     private var started: Set<String> = []
+    private var syncObserver: NSObjectProtocol?
 
-    private init() {}
+    private init() {
+        syncObserver = SettingsSync.observeApplied(prefix: "bench.feature.") { [weak self] _ in
+            self?.reloadEnabledFromDefaults()
+        }
+    }
 
     private func enabledKey(_ id: String) -> String { "bench.feature.\(id).enabled" }
+
+    /// Whether the stored flag says `id` is on (absent means on).
+    private func storedEnabled(_ id: String) -> Bool {
+        let key = enabledKey(id)
+        return BenchDefaults.standard.object(forKey: key) == nil || BenchDefaults.standard.bool(forKey: key)
+    }
+
+    /// Re-reads the flags after `SettingsSync` wrote another Mac's, starting
+    /// or stopping whatever changed.
+    public func reloadEnabledFromDefaults() {
+        for feature in features where storedEnabled(feature.id) != isEnabled(feature.id) {
+            setEnabled(storedEnabled(feature.id), id: feature.id)
+        }
+    }
 
     /// Adds the features in display order. Call once at launch, before
     /// `startEnabled()`.
@@ -77,9 +96,8 @@ public final class FeatureRegistry: ObservableObject {
         self.features = features
         var enabled: Set<String> = []
         for feature in features {
-            let key = enabledKey(feature.id)
             // Default on: a fresh install gets every module.
-            if BenchDefaults.standard.object(forKey: key) == nil || BenchDefaults.standard.bool(forKey: key) {
+            if storedEnabled(feature.id) {
                 enabled.insert(feature.id)
             }
             ShortcutStore.shared.registerActions(feature.hotkeyActions)
