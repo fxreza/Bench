@@ -139,6 +139,7 @@ final class OverlayController {
             panels.append(panel)
         }
 
+        ShotDiag.startWatchdog()
         let key = panels.first { $0.frozen.screenFrame.contains(mouse) } ?? panels.first
         key?.makeKeyAndOrderFront(nil)
         if let key { key.makeFirstResponder(key.overlayView) }
@@ -186,6 +187,7 @@ final class OverlayController {
         guard !panels.isEmpty else { return }
         let closing = panels
         panels = []
+        ShotDiag.stopWatchdog()
         for panel in closing { panel.teardown() }
         OverlayTooltip.shared.hide()
         windowCaptureInFlight = false
@@ -261,12 +263,17 @@ final class OverlayController {
         case .close:
             break
         case .copy:
+            // A label still being typed is committed first, so the copied image
+            // has it - Return already did this, ⌘C and the button did not.
+            view.commitTextEditing()
             EditorActions.copy(document)
             cancel()
         case .save:
+            view.commitTextEditing()
             EditorActions.save(document)
             cancel()
         case .saveAs:
+            view.commitTextEditing()
             // The panel must stay up for the sheet; close only once it saved.
             EditorActions.saveAs(document, for: panel) { [weak self] url in
                 if url != nil { self?.cancel() }

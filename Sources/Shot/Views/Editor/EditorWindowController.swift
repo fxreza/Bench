@@ -238,14 +238,21 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate,
 
     // MARK: - Actions
 
-    func copyImage() { EditorActions.copy(annotationDocument) }
+    /// A label still being typed is committed first so the exported image has
+    /// it; the same goes for the two save actions below.
+    func copyImage() {
+        canvas.endTextEditing(commit: true)
+        EditorActions.copy(annotationDocument)
+    }
 
     func saveImage() {
+        canvas.endTextEditing(commit: true)
         guard let url = EditorActions.save(annotationDocument) else { return }
         showSavedFeedback(folder: url.deletingLastPathComponent().lastPathComponent)
     }
 
     func saveImageAs() {
+        canvas.endTextEditing(commit: true)
         EditorActions.saveAs(annotationDocument, for: window) { [weak self] url in
             guard let self, let url else { return }
             self.showSavedFeedback(folder: url.deletingLastPathComponent().lastPathComponent)
@@ -294,9 +301,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate,
 
         // While a text label is being edited the standard editing commands win;
         // there is no main menu to route them, so send them down the chain here.
+        // ⌘C is not one of them: it copies the image, committing the label
+        // first, exactly like the toolbar's Copy button (see `copyImage`).
         if canvas.isEditingText {
             switch key {
-            case "c": return NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self)
             case "x": return NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: self)
             case "v": return NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self)
             case "a": return NSApp.sendAction(#selector(NSResponder.selectAll(_:)), to: nil, from: self)

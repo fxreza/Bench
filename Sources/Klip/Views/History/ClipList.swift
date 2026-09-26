@@ -227,6 +227,27 @@ struct ClipList: View {
                 // 5A-19: the right-click selection happens here, on the
                 // mouse-down, not inside the `.contextMenu` ViewBuilder.
                 onRightMouseDown: { viewModel.selectForContextMenu(item.id) },
+                // Double-click is ↩ with the mouse: same action, same rules,
+                // one implementation. It used to copy the clip to the
+                // clipboard and close instead, which meant the two most
+                // obvious ways to "use this clip" did different things and
+                // only one of them put the text where you were typing.
+                //
+                // `keyEnter` acts on the selection, and the mouse-down that
+                // opened this double-click has already selected this row, so
+                // it is this clip that gets pasted. Everything else comes
+                // along for free: restore rather than paste in the trash,
+                // paste-plain if that is the default, a multi-selection
+                // pasted as one, and Keep Open leaving the window up.
+                //
+                // Recognised by the overlay (`NSEvent.clickCount`), not a
+                // SwiftUI `TapGesture(count: 2)`: on macOS 27 SwiftUI no
+                // longer sees clicks the overlay has taken, and the gesture
+                // stopped firing.
+                onDoubleClick: {
+                    viewModel.focusIndex(of: item.id)
+                    viewModel.keyEnter()
+                },
                 // 5C: rows only accept a reorder drop inside a folder. In All
                 // and Favorites the handler is nil, the view unregisters its
                 // dragged types, and a clip drag behaves exactly as before —
@@ -238,34 +259,6 @@ struct ClipList: View {
                     : nil
             ),
             alignment: .center
-        )
-        .simultaneousGesture(
-            TapGesture(count: 1)
-                .onEnded { _ in
-                    // Handled by ClickModifierDetector — kept so the
-                    // double-click recogniser has a single-tap sibling.
-                }
-        )
-        .highPriorityGesture(
-            TapGesture(count: 2)
-                .onEnded { _ in
-                    // Double-click is ↩ with the mouse: same action, same
-                    // rules, one implementation. It used to copy the clip to
-                    // the clipboard and close instead, which meant the two
-                    // most obvious ways to "use this clip" did different
-                    // things and only one of them put the text where you were
-                    // typing.
-                    //
-                    // `keyEnter` acts on the selection, and the mouse-down
-                    // that opened this double-click has already selected this
-                    // row (`ClickModifierDetector`), so it is this clip that
-                    // gets pasted. Everything else comes along for free:
-                    // restore rather than paste in the trash, paste-plain if
-                    // that is the default, a multi-selection pasted as one,
-                    // and Keep Open leaving the window up afterwards.
-                    viewModel.focusIndex(of: item.id)
-                    viewModel.keyEnter()
-                }
         )
         .contextMenu {
             // Right-clicking a row outside the current selection selects it

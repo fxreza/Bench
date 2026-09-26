@@ -1,6 +1,6 @@
 # Piko - attribution
 
-The Piko module is the standalone Piko app (`../Piko`, MIT, Copyright 2026 Sam
+The Piko module is the standalone Piko app (github.com/fxreza/Piko, MIT, Copyright 2026 Sam
 Reza) ported into Bench. Two things in it are not ours.
 
 ## mediaremote-adapter (bundled, BSD 3-Clause)

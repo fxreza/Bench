@@ -260,6 +260,7 @@ final class MiddleClickEngine {
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            TapLog.log.error("DIAG event tap disabled (\(type.rawValue, privacy: .public)); re-enabling")
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
@@ -277,6 +278,7 @@ final class MiddleClickEngine {
                 && monitor.fingerCount == TapDetector.Config().fingers
             guard byFn || byFingers else { break }
             held = type == .leftMouseDown ? .left : .right
+            TapLog.log.info("DIAG converting click to middle: fn=\(byFn, privacy: .public) fingers=\(byFingers, privacy: .public)")
             convert(event, to: .otherMouseDown)
         case .leftMouseDragged where held == .left,
              .rightMouseDragged where held == .right:

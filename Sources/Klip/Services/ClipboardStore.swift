@@ -690,7 +690,7 @@ class ClipboardStore: ObservableObject {
         do {
             let file = TrashFile(version: Self.trashSchemaVersion, items: trashToSave)
             let data = try JSONEncoder().encode(file)
-            try data.write(to: trashFileURL, options: .atomic)
+            try Self.writeCreatingDirectory(data, to: trashFileURL)
         } catch {
             print("[Buffer] Failed to save trash: \(error)")
         }
@@ -1003,7 +1003,7 @@ class ClipboardStore: ObservableObject {
         let url = imagesDirectory.appendingPathComponent(filename)
 
         do {
-            try data.write(to: url, options: .atomic)
+            try Self.writeCreatingDirectory(data, to: url)
             return filename
         } catch {
             print("[Buffer] Failed to save image: \(error)")
@@ -1017,7 +1017,7 @@ class ClipboardStore: ObservableObject {
         let url = textsDirectory.appendingPathComponent(filename)
 
         do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            try Self.writeCreatingDirectory(Data(text.utf8), to: url)
             return filename
         } catch {
             print("[Buffer] Failed to save text file: \(error)")
@@ -1038,7 +1038,7 @@ class ClipboardStore: ObservableObject {
         let filename = "\(itemID.uuidString).rtf"
         let url = textsDirectory.appendingPathComponent(filename)
         do {
-            try data.write(to: url, options: .atomic)
+            try Self.writeCreatingDirectory(data, to: url)
             return filename
         } catch {
             print("[Buffer] Failed to save RTF: \(error)")
@@ -1053,7 +1053,7 @@ class ClipboardStore: ObservableObject {
         let filename = "\(itemID.uuidString).plist"
         let url = flavorsDirectory.appendingPathComponent(filename)
         do {
-            try data.write(to: url, options: .atomic)
+            try Self.writeCreatingDirectory(data, to: url)
             return filename
         } catch {
             print("[Buffer] Failed to save flavors: \(error)")
@@ -1547,6 +1547,27 @@ class ClipboardStore: ObservableObject {
         }
     }
 
+    /// Writes `data` atomically to `url`, creating the directory it lives in
+    /// first.
+    ///
+    /// `ensureDirectoriesExist()` runs once, at init. On 2026-09-18 an app
+    /// uninstaller swept every folder named "Klip" off the Mac, this store's
+    /// data folder included, while Bench kept running. From then on every
+    /// image, long-text and flavors write failed on the missing directory
+    /// and the clip was silently dropped, while short text (which lives in
+    /// `history.json`, whose parent the file-clip path had recreated) kept
+    /// working - so it looked like "images stopped copying". Every writer
+    /// now goes through here, so a folder that disappears underneath the
+    /// running app comes back on the next write instead of losing the clip.
+    /// The files the sweep took are gone either way; the *new* ones no
+    /// longer are.
+    nonisolated private static func writeCreatingDirectory(_ data: Data, to url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try data.write(to: url, options: .atomic)
+    }
+
     private func ensureDirectoriesExist() {
         try? fileManager.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
         try? fileManager.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
@@ -1707,7 +1728,7 @@ class ClipboardStore: ObservableObject {
         do {
             let file = HistoryFile(version: Self.historySchemaVersion, items: itemsToSave)
             let data = try JSONEncoder().encode(file)
-            try data.write(to: historyFileURL, options: .atomic)
+            try Self.writeCreatingDirectory(data, to: historyFileURL)
         } catch {
             print("[Buffer] Failed to save history: \(error)")
         }
@@ -1780,7 +1801,7 @@ class ClipboardStore: ObservableObject {
         }
         saveQueue.async {
             do {
-                try data.write(to: url, options: .atomic)
+                try Self.writeCreatingDirectory(data, to: url)
             } catch {
                 print("[Buffer] Failed to save folders: \(error)")
             }

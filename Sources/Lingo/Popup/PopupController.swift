@@ -147,6 +147,11 @@ final class PopupController: ObservableObject {
     /// input" when the first press actually produced a popup.
     var isPanelVisible: Bool { panel?.isVisible == true }
 
+    /// Whether the popup is still waiting on a selection capture. The
+    /// double-press shortcut treats a press during this phase as "stop
+    /// looking, let me type" no matter how long the capture has taken.
+    var isCapturing: Bool { isPanelVisible && phase == .capturing }
+
     /// Shows the popup the instant the hotkey fires, before the selection has
     /// been read. Deliberately does *not* take key focus: the capture
     /// strategies resolve the selection through the frontmost application, so

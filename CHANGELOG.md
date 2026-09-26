@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.4 (2026-09-25)
+
+### Fixed
+
+- Klip: double-clicking a clip did nothing on macOS 27. It pastes the clip again, exactly as ↩ does. The double-click is now recognised by the row's own click handling instead of a SwiftUI gesture that macOS 27 no longer delivers there.
+- Klip: ⌘C sometimes did nothing, and only the Copy icon worked. While the search field had keyboard focus, which is nearly the whole time the window is open, ⌘C was handed to the search field instead of copying the selected clip, so it copied the query you had typed, or nothing at all. ⌘C and ⌥⌘C now copy the selected clip whenever the search field has focus, and defer to a text field only when you have actually selected text in the preview pane with the mouse. Edit mode is unchanged: ⌘C there still copies the text you are editing.
+- Shot: ⌘C sometimes did nothing, and only the Copy button worked. After placing a text label, the label keeps the keyboard until Esc, ⌘↩ or a click outside it, and ⌘C went to the label, copying its text or nothing, instead of the screenshot. ⌘C now copies the screenshot whenever the capture is ready, committing the label first, in both the overlay and the editor window. The Copy, Save and Save As buttons commit a label that is still being typed too, so it is no longer missing from the image they produce. ⌘X, ⌘V, ⌘A and ⌘Z still work inside the label while you type it.
+- Klip: deleting several selected clips now behaves the same everywhere. ⌘⌫ and the preview pane's trash icon used to delete only the focused clip, one per press, and the row menu's Delete removed the whole selection with no confirmation; only the preview pane's "Delete N Items…" button asked first. Now any of them deletes the whole selection after one "Delete N clips?" card, shown in the window whether or not the preview pane is open, and Esc cancels it. A single clip still deletes at once, since it goes to the Trash and can be restored.
+- Klip: an image, a long text or a rich-text clip was silently dropped when its folder under `~/Library/Application Support/Bench/Klip` had disappeared while Bench was running (an app uninstaller that removes every folder named "Klip" does exactly that). The folders were only created at launch; every writer now recreates its folder on demand, so new clips keep landing on disk and the history, trash and folder indexes are written again too.
+
 ## 0.3.3 (2026-09-15)
 
 ### Added

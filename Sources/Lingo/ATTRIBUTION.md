@@ -1,6 +1,6 @@
 # Lingo attribution
 
-Lingo is a port of the standalone [Transi](../../../Transi) app into Bench.
+Lingo is a port of the standalone [Transi](https://github.com/fxreza/Transi) app into Bench.
 It links the following open-source packages, all MIT-licensed:
 
 | Package | Author | Where it comes from |

@@ -172,6 +172,8 @@ struct HistoryContentView: View {
             FolderPromptLayer(viewModel: viewModel)  // 3B: rename / delete / move
 
             TrashPromptLayer(viewModel: viewModel)   // 5E: purge / empty trash
+
+            DeletePromptLayer(viewModel: viewModel)  // 0.3.4: delete a multi-selection
         }
     }
 
@@ -331,7 +333,8 @@ struct HistoryContentView: View {
         }
         .background(GlobalKeyMonitor(
             viewModel: viewModel,
-            onBackspace: { viewModel.keyBackspace(searchFieldHasFocus: isSearchFocused) }
+            onBackspace: { viewModel.keyBackspace(searchFieldHasFocus: isSearchFocused) },
+            isSearchFocused: { isSearchFocused }
         ))
     }
 

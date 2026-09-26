@@ -5,11 +5,11 @@ separate apps:
 
 | Module | Came from | Does |
 |---|---|---|
-| Shot  | Snapper (`../Snapper`) | screenshots, scrolling capture, annotation editor |
-| Klip  | Klip (`../Klip`)       | clipboard history, folders, iCloud Drive sync |
-| Lingo | Transi (`../Transi`)   | translation popup (Google, Bing, Gemini), OCR, speech |
+| Shot  | Snapper (github.com/fxreza/Snapper) | screenshots, scrolling capture, annotation editor |
+| Klip  | Klip (github.com/fxreza/Klip) | clipboard history, folders, iCloud Drive sync |
+| Lingo | Transi (github.com/fxreza/Transi) | translation popup (Google, Bing, Gemini), OCR, speech |
 | Snap  | new (replaces BetterTouchTool triggers) | window layout, previous window, titlebar double-click, two scripts |
-| Piko  | Piko (`../Piko`)       | Dynamic Island for the notch: volume/brightness HUD, now playing, Bluetooth, battery |
+| Piko  | Piko (github.com/fxreza/Piko) | Dynamic Island for the notch: volume/brightness HUD, now playing, Bluetooth, battery |
 | Tap   | new (replaces a BetterTouchTool trigger) | three-finger trackpad click or tap as a middle click |
 
 Pure SwiftPM, macOS 14+, Swift 5 language mode. No Xcode on this Mac.

@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Preview-pane content shown when more than one item is selected: counts,
-/// total size, type breakdown, Download All, first-item preview and the inline
-/// delete confirmation.
+/// total size, type breakdown, Download All, first-item preview and the
+/// Delete button. The delete confirmation is no longer inline here: it is the
+/// `DeleteClipsPrompt` card, shared with ⌘⌫ and the row menu.
 ///
 /// 5E: in Trash scope the two actions at the bottom become Restore All and
 /// Delete Permanently; everything above them (the counts, the breakdown, the
@@ -145,80 +146,22 @@ struct MultiSelectionSummary: View {
 
             Divider()
 
-            if viewModel.showDeleteConfirmation {
-                // Inline confirmation — a system alert would make the borderless
-                // panel resign key and close.
-                VStack(spacing: 8) {
-                    Text(deleteConfirmationText(selectionCount: selectionCount, lockedCount: lockedCount))
-                        .font(.klip(.chip))
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-
-                    HStack(spacing: 10) {
-                        Button(action: {
-                            withAnimation(.easeOut(duration: 0.15)) {
-                                viewModel.showDeleteConfirmation = false
-                            }
-                        }) {
-                            Text("Cancel")
-                                .font(.klip(.chip))
-                                .fontWeight(.medium)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 5)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(Theme.chipInactive))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.primary)
-
-                        Button(action: {
-                            viewModel.deleteSelectedItems()
-                            viewModel.showDeleteConfirmation = false
-                        }) {
-                            Text("Delete")
-                                .font(.klip(.chip))
-                                .fontWeight(.semibold)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 5)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(Theme.destructive.opacity(0.85)))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.white)
-                    }
+            // Same card as ⌘⌫ and the row menu (`requestDelete`).
+            Button(action: { viewModel.deleteSelectedItems() }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "trash")
+                    Text("Delete \(selectionCount) Items…")
                 }
-                .padding(.vertical, 4)
-                .transition(.opacity.combined(with: .scale(scale: 0.95)))
-            } else {
-                Button(action: {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        viewModel.showDeleteConfirmation = true
-                    }
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "trash")
-                        Text("Delete \(selectionCount) Items…")
-                    }
-                    .font(.klip(.chip))
-                    .fontWeight(.medium)
-                    .foregroundStyle(isDeleteHovered ? Theme.destructive : Color.secondary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in
-                    isDeleteHovered = hovering
-                }
-                .transition(.opacity)
+                .font(.klip(.chip))
+                .fontWeight(.medium)
+                .foregroundStyle(isDeleteHovered ? Theme.destructive : Color.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                isDeleteHovered = hovering
             }
         }
-    }
-
-    /// "Delete M clips (N locked will be kept)" when the selection includes
-    /// locked items (which `performDelete` will skip); otherwise the plain
-    /// "Delete M items permanently?" prompt.
-    private func deleteConfirmationText(selectionCount: Int, lockedCount: Int) -> String {
-        guard lockedCount > 0 else {
-            return "Delete \(selectionCount) items permanently?"
-        }
-        return "Delete \(selectionCount) clips (\(lockedCount) locked will be kept)"
     }
 
     private func statTile(_ label: String, value: String) -> some View {

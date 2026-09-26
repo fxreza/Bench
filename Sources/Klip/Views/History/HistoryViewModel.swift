@@ -221,6 +221,7 @@ final class HistoryViewModel: ObservableObject {
     /// down and Esc dismisses the prompt rather than the window.
     var isPromptShowing: Bool {
         showNewFolderPrompt || isFolderPromptShowing || showRenameClipPrompt || showQRPrompt
+            || showDeleteConfirmation
     }
 
     // MARK: - Selection
@@ -277,6 +278,11 @@ final class HistoryViewModel: ObservableObject {
 
     @Published var chunkedText = ChunkedTextState()
     @Published var isExtractingText = false
+    /// "Delete N clips?" — armed by `requestDelete` for any multi-selection in
+    /// the history, whichever way it was asked for (⌘⌫, the row menu, the
+    /// preview pane's button). A `PromptCard` like the trash confirmations,
+    /// not the preview pane's inline strip it used to be: the preview pane
+    /// can be hidden, and the row menu and ⌘⌫ never went through it at all.
     @Published var showDeleteConfirmation = false
 
     // MARK: - Trash prompts (5E)
@@ -672,6 +678,10 @@ final class HistoryViewModel: ObservableObject {
     /// Returns true when a prompt was dismissed.
     @discardableResult
     func dismissTopPrompt() -> Bool {
+        if showDeleteConfirmation {
+            cancelDelete()
+            return true
+        }
         if dismissTopTrashPrompt() { return true }   // 5E
         if dismissTopFolderPrompt() { return true }  // 3B
         if showQRPrompt {
@@ -858,29 +868,71 @@ final class HistoryViewModel: ObservableObject {
     // gesture means "erase this for good", which is destructive and therefore
     // always goes through a confirmation (`requestPurge`).
 
+    // Every delete entry point in the history funnels through `requestDelete`
+    // (0.3.4). Before, ⌘⌫ and the preview pane's trash icon deleted only the
+    // focused clip even with several selected, the row menu deleted the whole
+    // selection at once with no confirmation, and only the preview pane's
+    // "Delete N Items…" button asked first. Now: one clip deletes straight
+    // away, more than one always asks, and all three paths agree.
+
     func deleteSelection() {
         guard let item = selectedItem else { return }
-        if isTrashScope {
-            requestPurge(ids: selectedIDs.isEmpty ? [item.id] : selectedIDs)
-            return
-        }
-        performDelete(ids: [item.id])
+        requestDelete(ids: selectedIDs.isEmpty ? [item.id] : selectedIDs)
     }
 
     func delete(_ item: ClipboardItem) {
-        if isTrashScope {
-            requestPurge(ids: [item.id])
-            return
-        }
-        performDelete(ids: [item.id])
+        requestDelete(ids: [item.id])
     }
 
     func deleteSelectedItems() {
+        requestDelete(ids: selectedIDs)
+    }
+
+    /// Deletes `ids` (the selection when empty). In the trash this is a
+    /// purge and always confirms (`requestPurge`); in the history a single
+    /// clip goes to the trash immediately, and a multi-selection arms the
+    /// "Delete N clips?" card. As with `requestPurge`, the ids become the
+    /// selection first, so the card, the highlighted rows and what
+    /// `confirmDelete` removes can never disagree.
+    func requestDelete(ids: Set<UUID>) {
         if isTrashScope {
-            requestPurge(ids: selectedIDs)
+            requestPurge(ids: ids)
             return
         }
-        performDelete(ids: selectedIDs)
+        let targets = ids.isEmpty ? selectedIDs : ids
+        guard !targets.isEmpty else { return }
+        if targets.count == 1 {
+            performDelete(ids: targets)
+            return
+        }
+        if targets != selectedIDs {
+            selectedIDs = targets
+            let first = filteredItems.first { targets.contains($0.id) }
+            selectedID = first?.id
+            selectionAnchor = first?.id
+        }
+        showDeleteConfirmation = true
+    }
+
+    /// How many clips the delete card is about to remove, and how many of
+    /// them are locked and will be kept.
+    var deleteTargetCount: Int { selectedIDs.count }
+    var deleteTargetLockedCount: Int { selectedItems.filter { $0.isLocked }.count }
+
+    func confirmDelete() {
+        let targets = selectedIDs
+        showDeleteConfirmation = false
+        guard !targets.isEmpty else { return }
+        let result = performDelete(ids: targets)
+        guard result.deleted > 0, result.skippedLocked == 0 else { return }
+        showToast(
+            text: result.deleted == 1 ? "1 clip moved to Trash" : "\(result.deleted) clips moved to Trash",
+            systemImage: "trash"
+        )
+    }
+
+    func cancelDelete() {
+        showDeleteConfirmation = false
     }
 
     func saveSelectedImage() {

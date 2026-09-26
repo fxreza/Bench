@@ -21,6 +21,10 @@ final class LingoController {
     /// `translateCurrentSelection()`.
     private var lastTranslateHotkeyPress: Date?
     private static let doublePressWindow: TimeInterval = 0.8
+    /// The selection capture started by the last hotkey press. A double press
+    /// cancels it so a capture that finishes late can't replace the input
+    /// the user just asked for.
+    private var captureTask: Task<Void, Never>?
 
     // MARK: - Lifecycle
 
@@ -70,12 +74,22 @@ final class LingoController {
         // the hotkey again while the popup is still up jumps straight to the
         // input, so "⌥T ⌥T" is a two-tap way to type something to translate
         // without waiting out a capture that was never going to find text.
+        //
+        // Two ways to qualify: the second press lands inside the time window,
+        // or the first press's capture is still running. The second rule is
+        // what makes "twice fast" reliable — the capture chain (AX timeout,
+        // AppleScript, simulated ⌘C) can hold the main actor long enough that
+        // by the time this handler runs for the second press, the window has
+        // already elapsed on the clock.
+        let withinWindow = lastTranslateHotkeyPress.map {
+            Date().timeIntervalSince($0) < Self.doublePressWindow
+        } ?? false
         let isDoublePress = popup.isPanelVisible
-            && (lastTranslateHotkeyPress.map {
-                Date().timeIntervalSince($0) < Self.doublePressWindow
-            } ?? false)
+            && (withinWindow || popup.isCapturing)
         lastTranslateHotkeyPress = Date()
         if isDoublePress {
+            captureTask?.cancel()
+            captureTask = nil
             popup.showComposing(near: mouseLocation)
             return
         }
@@ -88,14 +102,18 @@ final class LingoController {
         // translation request doesn't pay for the handshake.
         TranslationCoordinator.shared.warmUpInBackground()
 
-        Task { @MainActor in
+        captureTask?.cancel()
+        captureTask = Task { @MainActor in
             var captured = await TextCapture.selectedText()
-            if captured == nil {
+            if captured == nil, !Task.isCancelled {
                 // Nothing selected: read whatever the pointer is resting on —
                 // a button, a label, an alert, or failing that OCR of the
                 // pixels around it.
                 captured = await PointerTextCapture.text(at: mouseLocation)
             }
+            // A double press moved the popup to the input while this was
+            // running; its result is stale and must not replace the input.
+            guard !Task.isCancelled else { return }
             guard let text = captured else {
                 // Nothing anywhere: fall into the input, so the one hotkey
                 // covers "translate this" and "let me type something".

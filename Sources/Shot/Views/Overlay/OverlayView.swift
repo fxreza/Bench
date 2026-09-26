@@ -11,6 +11,17 @@ import BenchCore
 /// Coordinates: the view is **flipped** (origin top-left, y down) and 1pt =
 /// 1 point of the display, so `bounds` == the screen in view coordinates and
 /// the canvas frame == the selection rect.
+///
+/// Drawing: the frozen bitmap, the dim and the selection border are *not*
+/// painted in `draw(_:)`. They live in layer-backed subviews (`backdrop`,
+/// `dimBands`, `border`) whose frames move with the selection, so a drag
+/// event costs a handful of layer frame updates that the window server
+/// composites on the GPU. Painting them here instead meant every mouse event
+/// invalidated the whole screen and re-rasterized the full Retina bitmap plus
+/// the dim - tens of megapixels per event - which is what made the rubber
+/// band stutter and stall. `draw(_:)` only paints the window-hover highlight
+/// and the annotation preview during a frame drag, and is invalidated only in
+/// the rects that changed.
 final class OverlayView: NSView, AnnotationCanvasDelegate {
 
     enum State { case idle, selecting, selected }
@@ -40,6 +51,12 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
     /// tracks `selection` between re-crops, so it is what a moved or resized
     /// selection has to be measured against.
     private var documentRect: CGRect?
+
+    // MARK: backdrop (see the class comment)
+    private let backdrop: OverlayBackdropView
+    /// Top, bottom, left, right bands around the undimmed hole.
+    private let dimBands = (0..<4).map { _ in OverlayDimView() }
+    private let border = OverlayBorderView()
 
     // MARK: chrome
     private let sizeLabel = OverlaySizeLabel()
@@ -74,8 +91,21 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
     init(frozen: FrozenScreen, controller: OverlayController) {
         self.frozen = frozen
         self.controller = controller
+        backdrop = OverlayBackdropView(image: frozen.image)
         super.init(frame: CGRect(origin: .zero, size: frozen.screenFrame.size))
         wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        // A rubber band is a plain click-and-drag: no force click, no deep
+        // press. Left at the system default, a hard press mid-drag sits at
+        // the force-click threshold with nowhere to go.
+        pressureConfiguration = NSPressureConfiguration(pressureBehavior: .primaryClick)
+        backdrop.frame = bounds
+        backdrop.autoresizingMask = [.width, .height]
+        addSubview(backdrop)
+        for band in dimBands { addSubview(band) }
+        border.isHidden = true
+        addSubview(border)
+        syncBackdropLayers()
         for view in [sizeLabel, toolStrip, actionStrip, regionStrip] as [NSView] {
             view.isHidden = true
             addSubview(view)
@@ -127,6 +157,7 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         let accent = Self.accentColor
         toolStrip.accent = accent
         actionStrip.accent = accent
+        border.accent = accent
         updateChromeVisibility()
         needsDisplay = true
     }
@@ -183,32 +214,10 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
 
     // MARK: - drawing
 
+    /// Only the window-hover highlight and the annotation preview of a frame
+    /// drag are painted here; everything else is a layer (class comment).
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-
-        // frozen desktop
-        ctx.saveGState()
-        ctx.translateBy(x: 0, y: bounds.height)
-        ctx.scaleBy(x: 1, y: -1)
-        ctx.interpolationQuality = .default
-        ctx.draw(frozen.image, in: CGRect(origin: .zero, size: bounds.size))
-        ctx.restoreGState()
-
-        // dim everything but the selection
-        let hole = undimmedRect
-        ctx.saveGState()
-        ctx.setFillColor(CGColor(gray: 0, alpha: 0.55))
-        if let hole {
-            let path = CGMutablePath()
-            path.addRect(bounds)
-            path.addRect(hole)
-            ctx.addPath(path)
-            ctx.fillPath(using: .evenOdd)
-        } else {
-            ctx.fill(bounds)
-        }
-        ctx.restoreGState()
-
         let accent = Self.accentColor
 
         // window highlight while idle
@@ -227,25 +236,23 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
             }
         }
 
-        // selection border (the handles are drawn by SelectionHandlesView, above the canvas)
-        if let sel = selection {
+        // While the frame is changing the canvas is hidden: draw the
+        // annotations at the place on the frozen desktop they were drawn
+        // on, which is where `recropDocument` leaves them on mouse-up.
+        if let sel = selection, showsAnnotationPreview, let doc = document {
+            let origin = (documentRect ?? sel).origin
             ctx.saveGState()
-            ctx.setStrokeColor(accent.cgColor)
-            ctx.setLineWidth(1)
-            ctx.stroke(sel.insetBy(dx: 0.5, dy: 0.5))
+            ctx.clip(to: sel)
+            ctx.translateBy(x: origin.x, y: origin.y)
+            AnnotationRenderer.draw(doc.annotations, sourceImage: doc.image, pixelScale: doc.pixelScale, in: ctx)
             ctx.restoreGState()
-            // While the frame is changing the canvas is hidden: draw the
-            // annotations at the place on the frozen desktop they were drawn
-            // on, which is where `recropDocument` leaves them on mouse-up.
-            if let doc = document, canvas?.isHidden == true, !doc.annotations.isEmpty {
-                let origin = (documentRect ?? sel).origin
-                ctx.saveGState()
-                ctx.clip(to: sel)
-                ctx.translateBy(x: origin.x, y: origin.y)
-                AnnotationRenderer.draw(doc.annotations, sourceImage: doc.image, pixelScale: doc.pixelScale, in: ctx)
-                ctx.restoreGState()
-            }
         }
+    }
+
+    /// True while `draw(_:)` has to paint the annotations itself.
+    private var showsAnnotationPreview: Bool {
+        guard let doc = document, canvas?.isHidden == true else { return false }
+        return !doc.annotations.isEmpty
     }
 
     /// The rect that shows the frozen desktop at full brightness. `nil` dims
@@ -257,19 +264,59 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         return sel
     }
 
+    /// Moves the dim bands and the border to the current selection. Cheap:
+    /// six frame changes on layer-backed views, nothing is re-rasterized.
+    private func syncBackdropLayers() {
+        let hole = undimmedRect?.intersection(bounds)
+        let frames: [CGRect]
+        if let h = hole, !h.isNull {
+            frames = [
+                CGRect(x: 0, y: 0, width: bounds.width, height: h.minY),
+                CGRect(x: 0, y: h.maxY, width: bounds.width, height: bounds.height - h.maxY),
+                CGRect(x: 0, y: h.minY, width: h.minX, height: h.height),
+                CGRect(x: h.maxX, y: h.minY, width: bounds.width - h.maxX, height: h.height),
+            ]
+        } else {
+            frames = [bounds, .zero, .zero, .zero]
+        }
+        for (band, frame) in zip(dimBands, frames) {
+            let empty = frame.width <= 0 || frame.height <= 0
+            if band.isHidden != empty { band.isHidden = empty }
+            if !empty, band.frame != frame { band.frame = frame }
+        }
+        if let sel = selection {
+            if border.frame != sel { border.frame = sel }
+            if border.isHidden { border.isHidden = false }
+        } else if !border.isHidden {
+            border.isHidden = true
+        }
+    }
+
+    /// Invalidates only what `draw(_:)` paints for a selection change: the
+    /// annotation preview area, old and new. Nothing when there is none.
+    private func invalidatePreview(from old: CGRect?, to new: CGRect?) {
+        guard showsAnnotationPreview else { return }
+        for r in [old, new] {
+            if let r, !r.isEmpty { setNeedsDisplay(r.insetBy(dx: -1, dy: -1)) }
+        }
+    }
+
     // MARK: - state transitions
 
     /// Clears any selection on this screen (another display took over).
     func resetToIdle() {
+        ShotDiag.log("resetToIdle from drag=\(drag) state=\(state)")
         drag = .none
         selection = nil
         detachCanvas()
         state = .idle
         updateChromeVisibility()
+        syncBackdropLayers()
         needsDisplay = true
     }
 
     private func setSelection(_ rect: CGRect, state newState: State) {
+        let old = selection
         selection = clampToScreen(rect)
         state = newState
         if newState == .selected, handles == nil { addHandles() }
@@ -278,8 +325,9 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         updateSizeLabel()
         updateChromeVisibility()
         layoutChrome()
+        syncBackdropLayers()
         window?.invalidateCursorRects(for: self)
-        needsDisplay = true
+        invalidatePreview(from: old, to: selection)
     }
 
     /// Stamps the app the pixels came from onto `result`.
@@ -549,22 +597,31 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
     }
 
     override func mouseExited(with event: NSEvent) {
-        if hoveredWindow != nil { hoveredWindow = nil; needsDisplay = true }
+        ShotDiag.log("mouseExited drag=\(drag)")
+        if hoveredWindow != nil { setHoveredWindow(nil) }
     }
 
     private func updateHoveredWindow(at point: CGPoint) {
         guard purpose == .capture, mode == .window else { return }
         let global = globalPoint(point)
         let found = WindowEnumerator.window(at: global, in: windows)
-        if found?.id != hoveredWindow?.id {
-            hoveredWindow = found
-            needsDisplay = true
+        if found?.id != hoveredWindow?.id { setHoveredWindow(found) }
+    }
+
+    /// Repaints just the old and the new highlight frame.
+    private func setHoveredWindow(_ info: WindowInfo?) {
+        for old in [hoveredWindow, info].compactMap({ $0 }) {
+            let r = viewRect(fromGlobal: old.frame).intersection(bounds)
+            if !r.isNull { setNeedsDisplay(r.insetBy(dx: -2, dy: -2)) }
         }
+        hoveredWindow = info
     }
 
     // MARK: - mouse
 
     override func mouseDown(with event: NSEvent) {
+        ShotDiag.log("mouseDown state=\(state) drag=\(drag) n=\(event.clickCount) lat=\(ShotDiag.latency(event))")
+        ShotDiag.lastDrag = nil
         window?.makeFirstResponder(self)
         let p = convert(event.locationInWindow, from: nil)
 
@@ -594,13 +651,14 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         // starting over throws the current capture away: never silently lose annotations
         if state == .selected { return }
         controller?.overlayViewDidSelect(self)
-        hoveredWindow = nil
+        if hoveredWindow != nil { setHoveredWindow(nil) }
         drag = .rubberBand(origin: p)
         detachCanvas()
         setSelection(CGRect(origin: p, size: .zero), state: .selecting)
     }
 
     override func mouseDragged(with event: NSEvent) {
+        ShotDiag.drag(event)
         let p = convert(event.locationInWindow, from: nil)
         let shift = event.modifierFlags.contains(.shift)
         switch drag {
@@ -613,7 +671,7 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
             handles?.syncFrame()
             updateSizeLabel()
             layoutChrome()
-            needsDisplay = true
+            syncBackdropLayers()
         case .move(let original, let start):
             let moved = original.offsetBy(dx: p.x - start.x, dy: p.y - start.y)
             setSelection(moved, state: state)
@@ -624,6 +682,7 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
+        ShotDiag.log("mouseUp drag=\(drag) sel=\(selection.map { NSStringFromRect($0) } ?? "nil") lat=\(ShotDiag.latency(event))")
         let previous = drag
         drag = .none
         switch previous {
@@ -651,12 +710,20 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         }
     }
 
+    override func otherMouseDown(with event: NSEvent) { ShotDiag.log("otherMouseDown btn=\(event.buttonNumber) drag=\(drag)"); super.otherMouseDown(with: event) }
+    override func otherMouseUp(with event: NSEvent) { ShotDiag.log("otherMouseUp btn=\(event.buttonNumber) drag=\(drag)"); super.otherMouseUp(with: event) }
+    override func otherMouseDragged(with event: NSEvent) { ShotDiag.log("otherMouseDragged drag=\(drag)"); super.otherMouseDragged(with: event) }
+    override func rightMouseDown(with event: NSEvent) { ShotDiag.log("rightMouseDown drag=\(drag)"); super.rightMouseDown(with: event) }
+    override func rightMouseUp(with event: NSEvent) { ShotDiag.log("rightMouseUp drag=\(drag)"); super.rightMouseUp(with: event) }
+    override func pressureChange(with event: NSEvent) { ShotDiag.log("pressure stage=\(event.stage) p=\(event.pressure) drag=\(drag)") }
+    override func mouseEntered(with event: NSEvent) { ShotDiag.log("mouseEntered drag=\(drag)") }
+
     /// Hides the canvas while the frame is changing; `draw` keeps painting the
     /// annotations at their place on the frozen desktop, clipped by the moving
     /// selection - which is exactly where `recropDocument` leaves them.
     private func beginGeometryDrag() {
         canvas?.isHidden = true
-        needsDisplay = true
+        invalidatePreview(from: nil, to: selection)
     }
 
     private func endGeometryDrag() {
@@ -665,12 +732,11 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
             canvas?.isHidden = false
             updateSizeLabel()
             layoutChrome()
-            needsDisplay = true
             return
         }
         recropDocument(to: sel)
+        invalidatePreview(from: documentRect, to: selection)
         canvas?.isHidden = false
-        window?.makeFirstResponder(canvas)
     }
 
     /// Re-crops the frozen bitmap after the selection moved or resized and
@@ -759,9 +825,15 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         // The inline text editor keeps the standard editing shortcuts. There is
         // no main menu to route them, and NSTextView has no key equivalents of
         // its own, so they have to be sent down the responder chain by hand.
+        //
+        // ⌘C is deliberately not among them. A freshly placed label keeps the
+        // keyboard until Esc, ⌘↩ or a click outside it, with its text selected,
+        // so ⌘C used to copy the label's text (or nothing) instead of the
+        // screenshot while the Copy button next to it still worked. ⌘C now
+        // falls through to the capture copy below, which commits the label
+        // first - the same thing the button does.
         if canvas?.isEditingText == true {
             switch key {
-            case "c": return NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self)
             case "x": return NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: self)
             case "v": return NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self)
             case "a" where !shift: return NSApp.sendAction(#selector(NSResponder.selectAll(_:)), to: nil, from: self)
@@ -783,6 +855,12 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
             return true
         default: return super.performKeyEquivalent(with: event)
         }
+    }
+
+    /// Commits an in-progress text label so it is part of the document before
+    /// it is copied or saved. Nothing happens when no label is being edited.
+    func commitTextEditing() {
+        canvas?.endTextEditing(commit: true)
     }
 
     func escapePressed() {
@@ -880,6 +958,7 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         canvas?.frame = selection ?? restored
         handles?.selection = selection ?? restored
         handles?.syncFrame()
+        syncBackdropLayers()
     }
 
     func canvasDidPlaceAnnotation(_ canvas: AnnotationCanvasView, tool: EditorTool) {
@@ -911,6 +990,85 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
         windows = []
         if let trackingArea { removeTrackingArea(trackingArea); self.trackingArea = nil }
     }
+}
+
+// MARK: - Backdrop layers
+
+/// The frozen display bitmap as static layer contents: uploaded once, then
+/// only composited. Never draws, never takes a mouse event.
+final class OverlayBackdropView: NSView {
+
+    private let image: CGImage
+
+    init(image: CGImage) {
+        self.image = image
+        super.init(frame: .zero)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .never
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        guard let layer else { return }
+        layer.contents = image
+        layer.contentsGravity = .resize
+        layer.magnificationFilter = .linear
+        layer.minificationFilter = .linear
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// One band of the 55% dim around the selection: a plain background colour on
+/// a layer, moved by frame changes only.
+final class OverlayDimView: NSView {
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .never
+    }
+
+    convenience init() { self.init(frame: .zero) }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = CGColor(gray: 0, alpha: 0.55)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// The 1pt accent border of the selection, as a layer border. Sits on the
+/// selection rect exactly like the old `stroke(sel.insetBy(0.5))`.
+final class OverlayBorderView: NSView {
+
+    var accent: NSColor = .controlAccentColor { didSet { needsDisplay = true } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+    }
+
+    convenience init() { self.init(frame: .zero) }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.borderWidth = 1
+        layer?.borderColor = accent.cgColor
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // MARK: - Handles
@@ -1035,3 +1193,81 @@ extension OverlayView {
         endGeometryDrag()
     }
 }
+
+
+// MARK: - TEMPORARY drag diagnostics (remove after the investigation)
+
+import os
+enum ShotDiag {
+    static let logger = Logger(subsystem: "shotdiag", category: "drag")
+    static var lastDrag: TimeInterval?
+    static var count = 0
+    static var watchdog: Thread?
+    static var running = false
+
+    static func log(_ s: String) { logger.log("\(s, privacy: .public)") }
+
+    static func latency(_ e: NSEvent) -> String {
+        String(format: "%.1fms", (ProcessInfo.processInfo.systemUptime - e.timestamp) * 1000)
+    }
+
+    static func drag(_ e: NSEvent) {
+        let now = ProcessInfo.processInfo.systemUptime
+        count += 1
+        let gap = lastDrag.map { (now - $0) * 1000 } ?? 0
+        lastDrag = now
+        let lat = (now - e.timestamp) * 1000
+        if gap > 40 || lat > 30 || count % 25 == 0 {
+            log(String(format: "drag #%d gap=%.0fms lat=%.1fms%@", count, gap, lat, gap > 40 ? " GAP" : ""))
+        }
+    }
+
+    /// Pings the main thread every 50 ms from a background thread and logs
+    /// whenever it took more than 100 ms to answer.
+    static func startWatchdog() {
+        guard watchdog == nil else { return }
+        running = true
+        let t = Thread {
+            var lastLoc = CGPoint.zero
+            var frozenSince: TimeInterval?
+            while running {
+                // Pointer sampling: does the pointer itself stop while no
+                // drag events arrive?
+                if let loc = CGEvent(source: nil)?.location {
+                    let now = ProcessInfo.processInfo.systemUptime
+                    let buttons = NSEvent.pressedMouseButtons
+                    if loc != lastLoc {
+                        if let f = frozenSince, now - f > 0.15 {
+                            log(String(format: "POINTER FROZEN %.0fms at (%.0f,%.0f) buttons=%d", (now - f) * 1000, lastLoc.x, lastLoc.y, buttons))
+                        }
+                        frozenSince = nil
+                        lastLoc = loc
+                    } else if frozenSince == nil, buttons != 0 {
+                        frozenSince = now
+                    }
+                }
+                let sent = ProcessInfo.processInfo.systemUptime
+                let sem = DispatchSemaphore(value: 0)
+                DispatchQueue.main.async { sem.signal() }
+                if sem.wait(timeout: .now() + 0.1) == .timedOut {
+                    sem.wait()
+                    let took = (ProcessInfo.processInfo.systemUptime - sent) * 1000
+                    log(String(format: "MAIN THREAD STALL %.0fms", took))
+                }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
+        t.name = "shot-diag-watchdog"
+        t.start()
+        watchdog = t
+        log("watchdog started; conn=\(CGSMainConnectionID())")
+    }
+
+    static func stopWatchdog() {
+        running = false
+        watchdog = nil
+        log("watchdog stopped")
+    }
+}
+
+@_silgen_name("CGSMainConnectionID") private func CGSMainConnectionID() -> UInt32

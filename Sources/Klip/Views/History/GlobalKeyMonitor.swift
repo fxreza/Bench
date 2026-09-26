@@ -28,6 +28,9 @@ import AppKit
 struct GlobalKeyMonitor: NSViewRepresentable {
     let viewModel: HistoryViewModel
     let onBackspace: () -> Bool
+    /// Whether the search field currently holds SwiftUI focus. Read per
+    /// event, like `onBackspace`, because `@FocusState` only lives in a view.
+    let isSearchFocused: () -> Bool
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -42,7 +45,8 @@ struct GlobalKeyMonitor: NSViewRepresentable {
                 event,
                 panel: view.window,
                 viewModel: context.coordinator.viewModel,
-                onBackspace: context.coordinator.onBackspace
+                onBackspace: context.coordinator.onBackspace,
+                searchFieldHasFocus: context.coordinator.isSearchFocused?() ?? false
             )
         }
         context.coordinator.monitor = monitor
@@ -59,15 +63,34 @@ struct GlobalKeyMonitor: NSViewRepresentable {
         _ event: NSEvent,
         panel: NSWindow?,
         viewModel: HistoryViewModel,
-        onBackspace: (() -> Bool)?
+        onBackspace: (() -> Bool)?,
+        searchFieldHasFocus: Bool = false
     ) -> NSEvent? {
         guard shouldHandle(event, panel: panel) else { return event }
         return dispatch(
             event,
             viewModel: viewModel,
             firstResponder: panel?.firstResponder,
-            onBackspace: onBackspace
+            onBackspace: onBackspace,
+            searchFieldHasFocus: searchFieldHasFocus
         )
+    }
+
+    /// Whether ⌘C / ⌥⌘C belongs to a text view rather than to the clip.
+    ///
+    /// The search field is a SwiftUI `TextField`, and while it has focus,
+    /// which is nearly the whole time the panel is open, AppKit's first
+    /// responder is its field editor, an `NSTextView`. The old rule handed
+    /// every ⌘C to *any* `NSTextView` first responder, so ⌘C copied the
+    /// query (or nothing) instead of the selected clip, and only the Copy
+    /// icon worked. Now a text view keeps ⌘C only when there is actually
+    /// selected text in it to copy, and never when it is the search field's
+    /// editor: focusing that field selects its whole query, and nobody
+    /// presses ⌘C in a clipboard manager to copy the filter they typed.
+    static func textViewOwnsCopy(_ firstResponder: NSResponder?, searchFieldHasFocus: Bool) -> Bool {
+        guard let textView = firstResponder as? NSTextView else { return false }
+        if searchFieldHasFocus { return false }
+        return textView.selectedRange().length > 0
     }
 
     /// Whether this monitor owns `event`.
@@ -92,7 +115,8 @@ struct GlobalKeyMonitor: NSViewRepresentable {
         _ event: NSEvent,
         viewModel: HistoryViewModel,
         firstResponder: NSResponder?,
-        onBackspace: (() -> Bool)?
+        onBackspace: (() -> Bool)?,
+        searchFieldHasFocus: Bool = false
     ) -> NSEvent? {
         let isEditing = viewModel.isEditing
 
@@ -181,16 +205,17 @@ struct GlobalKeyMonitor: NSViewRepresentable {
             if onBackspace?() == true { return nil }
             return event
 
-        // MARK: ⌘C / ⌥⌘C — defer to an NSTextView first responder so
-        // selected text inside e.g. the edit field copies natively.
+        // MARK: ⌘C / ⌥⌘C — defer to a text view only when it has selected
+        // text to copy (preview text swiped with the mouse); see
+        // `textViewOwnsCopy` for why the search field never keeps it.
         case .copy:
             if isEditing { return event }
-            if firstResponder is NSTextView { return event }
+            if textViewOwnsCopy(firstResponder, searchFieldHasFocus: searchFieldHasFocus) { return event }
             viewModel.keyCopy()
             return nil
         case .copyPlain:
             if isEditing { return event }
-            if firstResponder is NSTextView { return event }
+            if textViewOwnsCopy(firstResponder, searchFieldHasFocus: searchFieldHasFocus) { return event }
             viewModel.keyCopyPlain()
             return nil
 
@@ -310,6 +335,7 @@ struct GlobalKeyMonitor: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.viewModel = viewModel
         context.coordinator.onBackspace = onBackspace
+        context.coordinator.isSearchFocused = isSearchFocused
     }
 
     func makeCoordinator() -> Coordinator {
@@ -320,6 +346,7 @@ struct GlobalKeyMonitor: NSViewRepresentable {
         var monitor: Any?
         var viewModel: HistoryViewModel
         var onBackspace: (() -> Bool)?
+        var isSearchFocused: (() -> Bool)?
 
         init(viewModel: HistoryViewModel) {
             self.viewModel = viewModel

@@ -39,7 +39,9 @@ One public type per module (`<Module>Feature`). Shared code goes in
 `BenchCore`, not into another module. Keys, action ids and data folders are
 namespaced per module. See `docs/ARCHITECTURE.md`.
 
-The standalone apps in `../Klip`, `../Snapper`, `../Transi` are the
-originals Bench was assembled from. They are kept as they are; never edit
-them from this repo, and never write into their preferences domains or
-Application Support folders.
+The standalone apps Bench was assembled from (Klip, Snapper, Transi, Piko)
+no longer exist on this Mac - their folders were removed from `~/Claude/Code`
+on 2026-09-18 and only their GitHub repositories remain
+(github.com/fxreza/Klip, /Snapper, /Transi, /Piko). Bench's module sources
+are the only copies to edit. Never write into those apps' preferences
+domains or Application Support folders.

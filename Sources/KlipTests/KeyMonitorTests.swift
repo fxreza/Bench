@@ -27,6 +27,12 @@ enum KeyMonitorTests {
         ("scope_eventOutsideThePanelIsReturnedUntouchedForEveryAction", testForeignEventPassesThroughForEveryAction),
         ("scope_shouldHandleIsFalseWithoutAKeyPanel", testShouldHandleGate),
         ("scope_panelEventsStillDispatch", testPanelEventsStillDispatch),
+        // ⌘C with a text view as first responder — the search field's editor
+        // is one, nearly the whole time the panel is open.
+        ("copy_textViewWithoutSelectionDoesNotKeepCmdC", testCopyWithTextViewNoSelection),
+        ("copy_textViewWithSelectedTextKeepsCmdC", testCopyWithTextViewSelection),
+        ("copy_searchFieldNeverKeepsCmdCEvenWithItsQuerySelected", testCopyWithSearchFieldSelectAll),
+        ("copy_editModeStillHandsCmdCToTheEditor", testCopyWhileEditingPassesThrough),
         // Quick Look — Space doubles as a typed character, so it has gates.
         ("quickLook_barePredicatesMatchOnlyTheirOwnKeys", testQuickLookKeyPredicates),
         ("quickLook_spaceOpensThePreviewWhenSearchIsEmpty", testSpaceOpensQuickLook),
@@ -293,6 +299,79 @@ enum KeyMonitorTests {
                           "Esc inside the panel is consumed")
             try expect(dismissed, "Esc inside the panel closes the window")
         }
+    }
+
+    // MARK: - ⌘C vs. a text view first responder
+
+    /// Runs ⌘C through the dispatch with `responder` as first responder and
+    /// returns whether the clip was copied. Uses the fixed default keycode
+    /// for ⌘C (8 + ⌘); the resolution half is covered by
+    /// `testModifierExactnessCopyVsCopyPlain`.
+    private static func cmdCCopiesClip(
+        firstResponder: NSResponder?,
+        searchFieldHasFocus: Bool,
+        isEditing: Bool = false
+    ) throws -> (copied: Bool, swallowed: Bool) {
+        try FolderUXTests.withViewModel { vm, store in
+            let items = FolderUXTests.seed(vm, store, ["alpha", "beta"])
+            vm.applyFilters(resetSelection: .defaultItem)
+            vm.selectSingle(items[0].id)
+            vm.isEditing = isEditing
+            var copied = false
+            vm.onCopyToClipboard = { _, _ in copied = true }
+            let cmdC = event(keyCode: 8, modifiers: [.command])
+            let result = GlobalKeyMonitor.dispatch(
+                cmdC, viewModel: vm, firstResponder: firstResponder,
+                onBackspace: nil, searchFieldHasFocus: searchFieldHasFocus
+            )
+            vm.isEditing = false
+            return (copied, result == nil)
+        }
+    }
+
+    private static func textView(_ text: String, selecting range: NSRange) -> NSTextView {
+        let tv = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 40))
+        tv.string = text
+        tv.setSelectedRange(range)
+        return tv
+    }
+
+    /// The bug: a focused search field puts an `NSTextView` (its field
+    /// editor) in front, and the old blanket "any NSTextView keeps ⌘C" rule
+    /// meant ⌘C never copied the clip while the query had focus. With no
+    /// selected text there is nothing for the text view to copy, so the clip
+    /// must win.
+    static func testCopyWithTextViewNoSelection() throws {
+        let tv = textView("query", selecting: NSRange(location: 5, length: 0))
+        let r = try cmdCCopiesClip(firstResponder: tv, searchFieldHasFocus: false)
+        try expect(r.copied, "⌘C over a text view with no selection copies the clip")
+        try expect(r.swallowed, "and the event is consumed")
+    }
+
+    /// Text swiped in the preview pane is a real selection; ⌘C stays native.
+    static func testCopyWithTextViewSelection() throws {
+        let tv = textView("preview text", selecting: NSRange(location: 0, length: 7))
+        let r = try cmdCCopiesClip(firstResponder: tv, searchFieldHasFocus: false)
+        try expect(!r.copied, "⌘C over selected preview text must not copy the clip")
+        try expect(!r.swallowed, "the event goes on to the text view")
+    }
+
+    /// Focusing the search field selects its whole query (AppKit's field
+    /// editor behaviour), which would satisfy the selection rule above. The
+    /// search field is exempt: ⌘C in a clipboard manager copies the clip.
+    static func testCopyWithSearchFieldSelectAll() throws {
+        let tv = textView("kept query", selecting: NSRange(location: 0, length: 10))
+        let r = try cmdCCopiesClip(firstResponder: tv, searchFieldHasFocus: true)
+        try expect(r.copied, "⌘C with the search field focused copies the clip even if its query is selected")
+        try expect(r.swallowed, "and the event is consumed")
+    }
+
+    /// Edit mode is unchanged: the editor keeps every ⌘C.
+    static func testCopyWhileEditingPassesThrough() throws {
+        let tv = textView("editing", selecting: NSRange(location: 0, length: 0))
+        let r = try cmdCCopiesClip(firstResponder: tv, searchFieldHasFocus: false, isEditing: true)
+        try expect(!r.copied, "⌘C while editing must not copy the clip")
+        try expect(!r.swallowed, "the editor gets the event")
     }
 
     // MARK: - Quick Look (Space / ⌘Y)

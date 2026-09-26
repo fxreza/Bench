@@ -28,7 +28,51 @@ enum ClipboardStoreTests {
         ("backfillKindsIfNeeded_fillsMissingKindsAndPersists", testBackfillFillsMissingKinds),
         ("backfillKindsIfNeeded_leavesExistingKindsUntouched", testBackfillLeavesExistingKindAlone),
         ("backfillKindsIfNeeded_secondCall_isIdempotent", testBackfillIsIdempotent),
+        ("assets_folderRemovedWhileRunning_isRecreatedOnNextWrite", testAssetFoldersRecreatedOnWrite),
     ]
+
+    // MARK: - Folders removed underneath a running store
+
+    /// 2026-09-18: an uninstaller swept the data folder while Bench was
+    /// running, and from then on every image save failed on the missing
+    /// `images/` directory - the clip was dropped without a word. Each asset
+    /// writer must bring its directory back on demand, even when the whole
+    /// storage root is gone.
+    static func testAssetFoldersRecreatedOnWrite() throws {
+        try withStore { store, dir in
+            let fm = FileManager.default
+            for sub in ["images", "texts", "flavors"] {
+                try fm.removeItem(at: dir.appendingPathComponent(sub, isDirectory: true))
+            }
+
+            guard let image = store.saveImage(Data([0x89, 0x50, 0x4E, 0x47]), fileExtension: "png") else {
+                throw TestFailure(message: "saveImage must succeed after images/ was removed", file: #file, line: #line)
+            }
+            try expect(fm.fileExists(atPath: dir.appendingPathComponent("images/\(image)").path),
+                       "the image lands in a recreated images/ folder")
+
+            guard let text = store.saveText("long clip") else {
+                throw TestFailure(message: "saveText must succeed after texts/ was removed", file: #file, line: #line)
+            }
+            try expect(fm.fileExists(atPath: dir.appendingPathComponent("texts/\(text)").path),
+                       "the text lands in a recreated texts/ folder")
+
+            let id = UUID()
+            guard let flavors = store.saveFlavors(Data([1, 2, 3]), itemID: id) else {
+                throw TestFailure(message: "saveFlavors must succeed after flavors/ was removed", file: #file, line: #line)
+            }
+            try expect(fm.fileExists(atPath: dir.appendingPathComponent("flavors/\(flavors)").path),
+                       "the flavors bundle lands in a recreated flavors/ folder")
+
+            // The whole root gone, not just a subfolder.
+            try fm.removeItem(at: dir)
+            guard let again = store.saveImage(Data([1]), fileExtension: "jpg") else {
+                throw TestFailure(message: "saveImage must recreate the storage root too", file: #file, line: #line)
+            }
+            try expect(fm.fileExists(atPath: dir.appendingPathComponent("images/\(again)").path),
+                       "the image lands under a recreated storage root")
+        }
+    }
 
     // MARK: - Harness
 

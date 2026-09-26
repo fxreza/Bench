@@ -7,8 +7,14 @@ import AppKit
 /// overlay swallows `mouseDown`, so a SwiftUI `.onDrag` placed on the row below
 /// it would never start. A drag begins once the pointer has travelled more than
 /// `dragThreshold` points with the button held; anything short of that is a
-/// plain click and behaves exactly as it did before (select / ⌘ / ⇧, with the
-/// double-click recogniser still living in `ClipList`).
+/// plain click and behaves exactly as it did before (select / ⌘ / ⇧).
+///
+/// It also recognises the **double-click** (`onDoubleClick`). That used to be
+/// a SwiftUI `TapGesture(count: 2)` on the row underneath, which only worked
+/// because SwiftUI still saw clicks this overlay had swallowed; on macOS 27 it
+/// no longer does, so the double-click went dead. `NSEvent.clickCount` is the
+/// system's own double-click detection (honouring the user's double-click
+/// speed) and cannot be lost that way.
 ///
 /// 5C makes it the row's **drop target** too, for reordering clips inside a
 /// folder. The target has to live here rather than in a background view like
@@ -41,6 +47,11 @@ struct ClickModifierDetector: NSViewRepresentable {
     /// (review 5A-19) while preserving the ordering the menu depends on.
     var onRightMouseDown: (() -> Void)? = nil
 
+    /// Called on the mouse-up that completes a double-click, provided the
+    /// press did not turn into a drag. The mouse-down half has already run
+    /// `onClickWithModifiers`, so the row is selected by then.
+    var onDoubleClick: (() -> Void)? = nil
+
     /// Non-nil only in folder scope: accepts dragged clip ids and inserts them
     /// above or below this row. Return `true` if the drop was consumed.
     var onReorderDrop: (([UUID], InsertionEdge) -> Bool)? = nil
@@ -53,11 +64,14 @@ struct ClickModifierDetector: NSViewRepresentable {
         var dragPayload: (() -> ClipDragRequest?)?
         var onDragBegan: (([UUID]) -> Void)?
         var onRightMouseDown: (() -> Void)?
+        var onDoubleClick: (() -> Void)?
         var onReorderDrop: (([UUID], InsertionEdge) -> Bool)?
 
         private var mouseDownPoint: CGPoint?
         private var pendingDrag: ClipDragRequest?
         private var isDragging = false
+        /// Set by the second mouse-down of a double-click, fired on its mouse-up.
+        private var pendingDoubleClick = false
 
         // MARK: Reorder drop target (5C)
 
@@ -151,6 +165,7 @@ struct ClickModifierDetector: NSViewRepresentable {
         override func mouseDown(with event: NSEvent) {
             mouseDownPoint = convert(event.locationInWindow, from: nil)
             isDragging = false
+            pendingDoubleClick = event.clickCount == 2
             // Snapshot the payload *before* the click mutates the selection, so
             // pressing on a row that is part of a multi-selection still drags
             // the whole selection even though the press collapses it.
@@ -184,6 +199,7 @@ struct ClickModifierDetector: NSViewRepresentable {
                 return
             }
             isDragging = true
+            pendingDoubleClick = false
 
             let image = request.image
             let item = NSDraggingItem(pasteboardWriter: ClipDragPayload.pasteboardItem(ids: request.ids))
@@ -204,9 +220,12 @@ struct ClickModifierDetector: NSViewRepresentable {
         override func mouseUp(with event: NSEvent) {
             mouseDownPoint = nil
             pendingDrag = nil
+            let fireDoubleClick = pendingDoubleClick && !isDragging
+            pendingDoubleClick = false
             // The pre-3B view had no `mouseUp` override, so the event reached
             // the next responder. Keep it that way.
             super.mouseUp(with: event)
+            if fireDoubleClick { onDoubleClick?() }
         }
 
         // MARK: NSDraggingSource
@@ -239,6 +258,7 @@ struct ClickModifierDetector: NSViewRepresentable {
         view.dragPayload = dragPayload
         view.onDragBegan = onDragBegan
         view.onRightMouseDown = onRightMouseDown
+        view.onDoubleClick = onDoubleClick
         view.onReorderDrop = onReorderDrop
         view.refreshDropRegistration()
         return view
@@ -250,6 +270,7 @@ struct ClickModifierDetector: NSViewRepresentable {
             clickView.dragPayload = dragPayload
             clickView.onDragBegan = onDragBegan
             clickView.onRightMouseDown = onRightMouseDown
+            clickView.onDoubleClick = onDoubleClick
             clickView.onReorderDrop = onReorderDrop
             clickView.refreshDropRegistration()
         }

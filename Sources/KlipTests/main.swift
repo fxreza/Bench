@@ -14,6 +14,7 @@ exit(MainActor.assumeIsolated {
         ("FolderOrderTests", FolderOrderTests.tests),
         ("TrashTests", TrashTests.tests),
         ("TrashUXTests", TrashUXTests.tests),
+        ("DeleteConfirmTests", DeleteConfirmTests.tests),
         ("FolderTests", FolderTests.tests),
         ("FolderUXTests", FolderUXTests.tests),
         ("FilterStateTests", FilterStateTests.tests),
