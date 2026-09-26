@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.5 (2026-09-26)
+
+### Fixed
+
+- Snap: Activate Previous Window (⌥⇥) stopped working on macOS 27. When the previous window was on another desktop, the menu bar switched to its app but you stayed where you were and the window never came forward; macOS 27 no longer follows an activated window to its desktop, not even for its own ⌘⇥. Snap now fronts that exact window and, when it lives on another desktop, slides there with your own "Move left/right a space" shortcut (⌃← / ⌃→ by default, in Keyboard Shortcuts > Mission Control), then keeps the window in front while the desktop settles.
+- Snap: ⌥⇥ could get stuck on the same app, or go nowhere at all, after a window was closed; closed windows are now dropped from the list before each switch.
+- Snap: pressing ⌥⇥ quickly several times could overshoot to an unrelated desktop or keep returning to the same window. A press made while a desktop slide is still running now waits for it to land, and only the latest press counts, so an even number of quick presses brings you back where you started.
+- Snap: ⌥⇥ no longer counts windows macOS brings forward on its own when you arrive on a desktop - a floating window shown on every desktop, or an app's window from another desktop - as the window you were last using.
+
 ## 0.3.4 (2026-09-25)
 
 ### Fixed

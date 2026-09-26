@@ -118,10 +118,15 @@ final class WindowController {
     // MARK: - Identity
 
     func identity(of window: AXUIElement, pid: pid_t) -> WindowIdentity {
-        var windowID = CGWindowID(0)
-        if _AXUIElementGetWindow(window, &windowID) != .success { windowID = 0 }
         let title = (Self.attribute(window, kAXTitleAttribute) as? String) ?? ""
-        return WindowIdentity(pid: pid, windowID: windowID, title: title)
+        return WindowIdentity(pid: pid, windowID: Self.windowID(of: window) ?? 0, title: title)
+    }
+
+    /// The window's `CGWindowID`, nil when the SPI does not answer.
+    static func windowID(of window: AXUIElement) -> CGWindowID? {
+        var windowID = CGWindowID(0)
+        guard _AXUIElementGetWindow(window, &windowID) == .success, windowID != 0 else { return nil }
+        return windowID
     }
 
     // MARK: - Placement
