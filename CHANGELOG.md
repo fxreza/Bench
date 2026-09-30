@@ -1,9 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.3.6 (2026-09-30)
+
+### Added
+
+- Klip: search finds images by the text inside them. Klip reads the text in every image on its own, in the background and on this Mac, so a screenshot turns up when you search for any word in it. Images already in the history are read once, in the background, starting shortly after launch.
+- Klip: search finds images by what they show. Every image is tagged on-device with the things in it (flower, desk, laptop, food, sky and so on), so "flower" or "flowers" finds pictures of flowers, and "desk laptop" or "desk+laptop" finds pictures with both. A `+` joins words only between letters, so "c++" is still searched as typed.
+- Klip: "Copy text in image" in the preview pane and "Copy Text" in an image's right-click menu copy the text found in the picture. Long text under an image preview is folded to four lines with Show all.
 
 ### Changed
 
+- Klip: the "Extract text from image" button is gone; text is read automatically, so there is nothing to extract by hand.
 - Shot: the Freehand tool's icon is now a squiggle instead of a pencil. At toolbar size the pencil looked like a diagonal stroke, almost the same as the Line tool's icon next to it.
 
 ## 0.3.5 (2026-09-26)
