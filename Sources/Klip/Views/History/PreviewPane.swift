@@ -214,9 +214,10 @@ struct PreviewPane: View {
     /// The nine history actions, always all nine, always in this order.
     ///
     /// They used to be built conditionally — no Edit on an image, no Save or
-    /// Extract Text on anything but an image — so the row's contents changed
-    /// as the selection moved and every icon after the missing one shifted
-    /// sideways. Stepping from a text clip to an image slid Pin, Favorite,
+    /// Extract Text (now "Copy text in image") on anything but an image — so
+    /// the row's contents changed as the selection moved and every icon after
+    /// the missing one shifted sideways. Stepping from a text clip to an image
+    /// slid Pin, Favorite,
     /// Lock and Delete under the pointer, and because the count changed the
     /// row could also wrap onto a second line for one clip and not the next,
     /// moving the preview below it.
@@ -227,7 +228,7 @@ struct PreviewPane: View {
     /// tooltip on a disabled icon says why it is off.
     private func historyActionIcons(for item: ClipboardItem) -> some View {
         let shortcuts = ShortcutManager.shared
-        let canExtract = item.type == .image && item.ocrText == nil
+        let imageText = ImageTextState(item)
 
         return HStack(spacing: 12) {
             iconButton(
@@ -266,18 +267,19 @@ struct PreviewPane: View {
                 enabled: viewModel.canShowQRCode(for: item)
             ) { viewModel.requestQRCode(id: item.id) }
 
+            // Klip reads the text in every image on its own now, so there is
+            // nothing left to "extract" by hand; what is useful is getting
+            // that text out. Same icon, same slot. It is three different
+            // kinds of "off" - not an image, not read yet, nothing in it - and
+            // each says so in its tooltip (`ImageTextState.copyHelp`) rather
+            // than the icon coming and going as the selection moves. It has
+            // no key of its own; the row menu's "Copy Text" is its twin.
             iconButton(
-                viewModel.isExtractingText ? "ellipsis.circle" : "text.viewfinder",
+                "text.viewfinder",
                 tint: Theme.iconIdle,
-                help: item.type != .image
-                    ? "Text can only be extracted from images"
-                    : item.ocrText != nil
-                        ? "Text has already been extracted from this image"
-                        : "Extract text from image",
-                enabled: canExtract && !viewModel.isExtractingText
-            ) {
-                Task { @MainActor in await viewModel.extractTextFromSelection() }
-            }
+                help: imageText.copyHelp,
+                enabled: imageText.canCopy
+            ) { viewModel.copyImageText(for: item) }
 
             iconButton(
                 item.isPinned ? "pin.fill" : "pin",
@@ -489,39 +491,22 @@ struct PreviewPane: View {
             // image clips look like it blinked. Nothing, then the image, is
             // one change.
 
-            if viewModel.isExtractingText {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(.vertical, 12)
-            } else if let ocrText = item.ocrText {
-                VStack(alignment: .leading, spacing: 0) {
-                    Rectangle()
-                        .fill(Theme.separator)
-                        .frame(height: 0.5)
-
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(ocrText)
-                            .font(.klip(.preview))
-                            .textSelection(.enabled)
-                            .lineSpacing(4)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
-
-                        // The tappable area used to be the glyph's own
-                        // painted pixels — a ~12 pt target with no padding
-                        // and no `contentShape`, which is half of why this
-                        // button "did nothing" (user item 11).
-                        Button(action: { viewModel.copyOCRText(ocrText) }) {
-                            Image(systemName: "doc.on.doc")
-                                .font(Theme.icon(12, weight: Theme.iconWeight(enabled: true), preview: true))
-                                .foregroundStyle(Theme.iconIdle)
-                                .padding(5)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .klipHelp("Copy extracted text")
-                    }
-                    .padding(.top, 12)
-                }
+            // The text Klip read out of the picture, folded to a few lines.
+            // Nothing at all both while it is still being read
+            // (`ocrText == nil`) and when there was none to read (empty, or
+            // the old "No text found" marker). There is no spinner for the
+            // first: the read happens in the background for every image, so
+            // a spinner would be on screen for each new screenshot, then
+            // replaced by a block, which is two layout changes where the
+            // honest answer is one (the block, when it lands). And a "no
+            // text" line under every photo is noise; the header icon's
+            // tooltip says it for anyone who asks.
+            //
+            // `.id(item.id)` gives each clip its own section, so a "Show all"
+            // never carries over from one screenshot to the next.
+            if let text = ImageTextState(item).text {
+                ImageTextSection(text: text) { viewModel.copyImageText(for: item) }
+                    .id(item.id)
             }
         }
     }

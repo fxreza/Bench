@@ -277,7 +277,6 @@ final class HistoryViewModel: ObservableObject {
     }()
 
     @Published var chunkedText = ChunkedTextState()
-    @Published var isExtractingText = false
     /// "Delete N clips?" — armed by `requestDelete` for any multi-selection in
     /// the history, whichever way it was asked for (⌘⌫, the row menu, the
     /// preview pane's button). A `PromptCard` like the trash confirmations,
@@ -948,29 +947,46 @@ final class HistoryViewModel: ObservableObject {
         PasteController.saveImageToDisk(for: item, store: store)
     }
 
-    func extractTextFromSelection() async {
-        guard let item = selectedItem, let img = preview(for: item).image else { return }
-        isExtractingText = true
-        let result = await OCRService.shared.recognizeText(from: img)
-        let text = result ?? "No text found in this image."
-        store.setOCRText(text, for: item)
-        isExtractingText = false
-    }
-
-    /// Copy button next to the OCR text under an image preview.
+    /// Copy button next to the text under an image preview, and the shared
+    /// path behind `copyImageText(for:)`.
     ///
     /// User item 11: this wrote to `NSPasteboard.general` directly and said
     /// nothing, so there was no way to tell a silent failure from a missed
     /// click on the 12 pt glyph — people gave up and selected the text by
     /// hand. It now goes through `PasteController.copyPlainText` (same
     /// ignore-next-change handshake as every other copy) and confirms with a
-    /// toast; `PreviewPane` gives the button a real hit area to go with it.
+    /// toast; `ImageTextSection` gives the button a real hit area to go with
+    /// it.
+    ///
+    /// The toast says "Text copied", not "OCR text copied": the text is read
+    /// out of every image automatically now, so what the user just did is
+    /// copy the text in a picture, not run an OCR step.
     ///
     /// `pasteboard` is injectable so the test can assert the write without
     /// clobbering the user's actual clipboard.
     func copyOCRText(_ ocrText: String, to pasteboard: NSPasteboard = .general) {
         guard PasteController.copyPlainText(ocrText, to: pasteboard) else { return }
-        showToast(text: "OCR text copied", systemImage: "doc.on.doc")
+        showToast(text: "Text copied", systemImage: "doc.on.doc")
+    }
+
+    /// Copy the text Klip read out of `item`'s picture: the preview pane's
+    /// "Copy text in image" icon, the text block's copy button and the row
+    /// menu's "Copy Text" all come here.
+    ///
+    /// A no-op, with no write and no toast, on anything that has no text to
+    /// copy (not an image, not read yet, nothing found, or the old "No text
+    /// found in this image." marker), because those surfaces are supposed to
+    /// be off in those states anyway (see `ImageTextState`) and a toast
+    /// claiming a copy that did not happen is worse than a dead click.
+    ///
+    /// It reads the clip's current text from the store rather than trusting
+    /// the `item` it was handed: the row menu and the pane hold a value that
+    /// was current when the view was built, and the background read can land
+    /// in between.
+    func copyImageText(for item: ClipboardItem, to pasteboard: NSPasteboard = .general) {
+        let current = store.items.first(where: { $0.id == item.id }) ?? item
+        guard let text = ImageTextState(current).text else { return }
+        copyOCRText(text, to: pasteboard)
     }
 
     // MARK: - Tags
@@ -1033,7 +1049,6 @@ final class HistoryViewModel: ObservableObject {
     /// `preview(for:)`. See it for why that is affordable synchronously.
     func reloadPreview() async {
         chunkedText = ChunkedTextState()
-        isExtractingText = false
         showTagInput = false
         tagInputText = ""
 

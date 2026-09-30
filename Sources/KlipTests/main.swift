@@ -41,6 +41,7 @@ exit(MainActor.assumeIsolated {
         ("SyncLockTests", SyncLockTests.tests),
         ("ImageDimensionsTests", ImageDimensionsTests.tests),
         ("ItemFormatTests", ItemFormatTests.tests),
+        ("ImageTextTests", ImageTextTests.tests),
         ("QRCodeTests", QRCodeTests.tests),
         ("ViewRegressionTests", ViewRegressionTests.tests),
         ("KlipFeatureTests", KlipFeatureTests.tests),
