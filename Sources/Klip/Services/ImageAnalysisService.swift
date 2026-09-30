@@ -107,7 +107,16 @@ nonisolated enum ImageAnalysisService {
     static func analyze(imageAt url: URL) -> Outcome {
         autoreleasepool {
             guard let image = downsampledImage(at: url) else { return .unreadable }
+            return analyze(image: image, name: url.lastPathComponent)
+        }
+    }
 
+    /// Runs both requests on an already decoded image, so a caller that
+    /// needs the pixels for something else too (`ImageAnalysisQueue`, which
+    /// also hands them to the smart-search image encoder) decodes once.
+    /// `name` is only for the log line.
+    static func analyze(image: CGImage, name: String) -> Outcome {
+        autoreleasepool {
             let classify = VNClassifyImageRequest()
             let recognize = VNRecognizeTextRequest()
             // `.accurate` is what the manual "Extract text" used, and the
@@ -124,7 +133,7 @@ nonisolated enum ImageAnalysisService {
             do {
                 try handler.perform([recognize, classify])
             } catch {
-                print("[Klip] Image analysis failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                print("[Klip] Image analysis failed for \(name): \(error.localizedDescription)")
                 return .failed
             }
 
@@ -144,8 +153,9 @@ nonisolated enum ImageAnalysisService {
     /// memory at full resolution the way `NSImage(contentsOf:)` + `cgImage`
     /// would make it. The EXIF orientation is applied, so a photo taken in
     /// portrait is read upright. An animated GIF contributes its first
-    /// frame.
-    static func downsampledImage(at url: URL) -> CGImage? {
+    /// frame. `maxShortSide` is lowered by callers that need less than
+    /// Vision does (the smart-search encoder wants 256 px).
+    static func downsampledImage(at url: URL, maxShortSide: Int = ImageAnalysisService.maxShortSide) -> CGImage? {
         let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary),
               CGImageSourceGetCount(source) > 0,
@@ -160,7 +170,7 @@ nonisolated enum ImageAnalysisService {
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: targetMaxPixelSize(width: width, height: height),
+            kCGImageSourceThumbnailMaxPixelSize: targetMaxPixelSize(width: width, height: height, maxShortSide: maxShortSide),
         ]
         return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary)
     }
@@ -168,7 +178,7 @@ nonisolated enum ImageAnalysisService {
     /// The `kCGImageSourceThumbnailMaxPixelSize` (a long-side length) that
     /// brings a `width` x `height` image within `maxShortSide` and
     /// `maxLongSide`, never upscaling. Pure, so the sizing rule is testable.
-    static func targetMaxPixelSize(width: Int, height: Int) -> Int {
+    static func targetMaxPixelSize(width: Int, height: Int, maxShortSide: Int = ImageAnalysisService.maxShortSide) -> Int {
         let short = Double(min(width, height))
         let long = Double(max(width, height))
         guard short > 0 else { return max(width, height) }

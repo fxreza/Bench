@@ -38,3 +38,12 @@ Copyright (c) 2026 Moamen Basel
 MIT License - see reference/pesty/LICENSE.
 
 iCloud Drive file sync approach: per-device snapshot files, content-hash deduplication, tombstone-based deletion tracking, and `NSFileCoordinator` coordination.
+
+## MobileCLIP (added in Bench)
+
+Smart image search (`Services/MobileCLIPImageSearch.swift`, `MobileCLIPEncoder.swift`, `ImageEmbeddingIndex.swift`, `CLIPTokenizer.swift`) runs Apple's MobileCLIP-S2 on-device.
+
+- **Model weights**: MobileCLIP-S2 Core ML encoders, Copyright (C) 2024 Apple Inc., "ML-MobileCLIP Model Weights and Data" license (`apple-ascl`), from https://huggingface.co/apple/coreml-mobileclip. Not in git; fetched by `scripts/fetch-clip-model.sh` and bundled by `scripts/build-app.sh`.
+- **Tokenizer**: `Services/CLIPTokenizer.swift` is ported from Apple's MobileCLIPExplore demo (https://github.com/apple/ml-mobileclip, `ios_app/MobileCLIPExplore/Tokenizer`, MIT, Copyright 2024 Apple Inc.), itself adapted from Hugging Face's swift-coreml-transformers (Apache-2.0), implementing OpenAI CLIP's BPE tokenizer (MIT, Copyright 2021 OpenAI), whose merges file it reads.
+
+The full notices are in the repository's root `ATTRIBUTION.md`, which ships inside the app.

@@ -59,10 +59,13 @@ public final class KlipFeature: BenchFeature {
         CloudDriveSync.shared.attach(store: store)
         CloudDriveSync.shared.startIfEnabled()
 
-        // Makes image clips searchable by their text and what they show.
-        // Started before the watcher so the first capture is already heard;
-        // the backfill of older images waits `Timing.backfillDelay`.
-        let imageAnalysis = ImageAnalysisQueue(store: store)
+        // Makes image clips searchable by their text and what they show,
+        // and (when the MobileCLIP model is bundled) keeps smart search's
+        // embedding index current. Started before the watcher so the first
+        // capture is already heard; the backfill of older images waits
+        // `Timing.backfillDelay`. Nothing here loads a model: the engine
+        // loads its encoders on first use, off the main thread.
+        let imageAnalysis = ImageAnalysisQueue(store: store, embedder: MobileCLIPImageSearch.shared)
         imageAnalysis.start()
         self.imageAnalysis = imageAnalysis
 
@@ -102,7 +105,8 @@ public final class KlipFeature: BenchFeature {
         historyWindowController = nil
 
         // Before the flush below, so analysis results still buffered by the
-        // backfill are part of the final write.
+        // backfill are part of the final write (it also writes the smart
+        // search index).
         imageAnalysis?.stop()
         imageAnalysis = nil
 
