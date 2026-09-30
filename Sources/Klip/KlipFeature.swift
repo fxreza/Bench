@@ -34,6 +34,7 @@ public final class KlipFeature: BenchFeature {
 
     private var store: ClipboardStore?
     private var watcher: ClipboardWatcher?
+    private var imageAnalysis: ImageAnalysisQueue?
     private var historyWindowController: HistoryWindowController?
     private var accessibilityObserver: NSObjectProtocol?
     private var lastAccessibilityToastAt: Date?
@@ -57,6 +58,13 @@ public final class KlipFeature: BenchFeature {
         // listening for that setting changing.
         CloudDriveSync.shared.attach(store: store)
         CloudDriveSync.shared.startIfEnabled()
+
+        // Makes image clips searchable by their text and what they show.
+        // Started before the watcher so the first capture is already heard;
+        // the backfill of older images waits `Timing.backfillDelay`.
+        let imageAnalysis = ImageAnalysisQueue(store: store)
+        imageAnalysis.start()
+        self.imageAnalysis = imageAnalysis
 
         let watcher = ClipboardWatcher(store: store)
         watcher.startWatching()
@@ -92,6 +100,11 @@ public final class KlipFeature: BenchFeature {
 
         historyWindowController?.close()
         historyWindowController = nil
+
+        // Before the flush below, so analysis results still buffered by the
+        // backfill are part of the final write.
+        imageAnalysis?.stop()
+        imageAnalysis = nil
 
         store.flushPendingSave()
         // Phase 4A: stop watching, then get this session's clips into iCloud

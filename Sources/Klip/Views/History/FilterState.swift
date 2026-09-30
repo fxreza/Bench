@@ -239,15 +239,19 @@ struct FilterState: Equatable {
     /// text in `textContent`, so they need no extra field. A clip's title
     /// joins the blob too, so `⌘F` finds a named clip by its name.
     ///
-    /// An image with no OCR text contributes only its (possibly empty) tags
-    /// and source app here, matching the old all-or-nothing behaviour for the
-    /// common case: no tag, no matching source app, no match.
+    /// Image clips also contribute what `ImageAnalysisService` found in them:
+    /// the text read out of the image (`ocrText`) and what it shows
+    /// (`imageLabels`, each with its English plural so "flowers" finds a
+    /// clip labelled "flower" - see `labelSearchTerms`). An image that has
+    /// not been analyzed yet contributes only its tags, title and source
+    /// app, as before.
     static func searchBlob(for item: ClipboardItem) -> String {
-        if let cached = blobCache[item.id], cached.stamp == item.updatedAt {
+        let stamp = BlobStamp(item)
+        if let cached = blobCache[item.id], cached.stamp == stamp {
             return cached.blob
         }
         let blob = buildSearchBlob(for: item)
-        cache(blob, for: item)
+        cache(blob, stamp: stamp, for: item)
         return blob
     }
 
@@ -257,16 +261,36 @@ struct FilterState: Equatable {
     // allocates a fresh String per item — on *every* keystroke: measured at
     // 35.6 ms for a no-match query over 10,000 items, 112 ms to type
     // "project". Nothing about an item's blob changes unless the item does,
-    // and every store mutation stamps `updatedAt` (`ClipboardStore.touchItem`),
-    // so `(id, updatedAt)` is an exact cache key.
+    // and every user edit stamps `updatedAt` (`ClipboardStore.touchItem`), so
+    // `updatedAt` plus the image-analysis fields (see `BlobStamp`) is an
+    // exact cache key.
     //
     // Two bounds keep this from becoming a memory problem in its own right:
     // a byte budget (a folded copy of every inline clip could otherwise be up
     // to `inlineTextLimit` × the whole history), and a sweep that drops
     // entries for items that are no longer in the list.
 
+    /// What a cached blob was built from. `updatedAt` covers every user edit;
+    /// `ocrText` and `imageLabels` are here as well because image analysis
+    /// deliberately does not stamp `updatedAt` (it must not win sync merges,
+    /// see `ClipboardStore.setImageAnalysis`), and a sync merge can fill them
+    /// in without changing it either. Comparing them is cheap on a hit: an
+    /// unchanged item hands back the very same string and array buffers, and
+    /// `==` short-circuits on shared storage.
+    private struct BlobStamp: Equatable {
+        let updatedAt: Date
+        let ocrText: String?
+        let imageLabels: [String]?
+
+        init(_ item: ClipboardItem) {
+            updatedAt = item.updatedAt
+            ocrText = item.ocrText
+            imageLabels = item.imageLabels
+        }
+    }
+
     private struct CachedBlob {
-        let stamp: Date
+        let stamp: BlobStamp
         let blob: String
     }
 
@@ -278,14 +302,14 @@ struct FilterState: Equatable {
     /// first, so the tail pays the old cost rather than everything thrashing).
     private static let blobCacheByteBudget = 16 * 1024 * 1024
 
-    private static func cache(_ blob: String, for item: ClipboardItem) {
+    private static func cache(_ blob: String, stamp: BlobStamp, for item: ClipboardItem) {
         if let existing = blobCache[item.id] {
             blobCacheBytes -= existing.blob.utf8.count
             blobCache[item.id] = nil
         }
         let size = blob.utf8.count
         guard blobCacheBytes + size <= blobCacheByteBudget else { return }
-        blobCache[item.id] = CachedBlob(stamp: item.updatedAt, blob: blob)
+        blobCache[item.id] = CachedBlob(stamp: stamp, blob: blob)
         blobCacheBytes += size
     }
 
@@ -314,7 +338,10 @@ struct FilterState: Equatable {
         // the text inside it unsearchable.
         if let title = item.displayTitle { parts.append(title) }
         if let text = item.textContent { parts.append(text) }
-        if let ocr = item.ocrText { parts.append(ocr) }
+        if let ocr = item.ocrText, !ocr.isEmpty { parts.append(ocr) }
+        if let labels = item.imageLabels, !labels.isEmpty {
+            parts.append(labelSearchTerms(labels).joined(separator: " "))
+        }
         if !item.tags.isEmpty { parts.append(item.tags.joined(separator: " ")) }
         if let sourceApp = item.sourceApp { parts.append(sourceApp) }
         if let attachment = item.fileAttachment {
@@ -327,6 +354,110 @@ struct FilterState: Equatable {
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
     }
 
+    // MARK: - Image labels in search
+
+    /// Each label followed by its plural form(s): `["flower", "computer
+    /// monitor"]` -> `["flower", "flowers", "computer monitor", "computer
+    /// monitors"]`.
+    ///
+    /// Only the plural is added because search is a substring match: the
+    /// singular query "flower" already finds "flowers", but "flowers" can
+    /// never find "flower". Vision's labels are English singular nouns, so
+    /// "the query is plural, the label is not" is the gap to close. A plural
+    /// that comes out odd ("golves") costs nothing - nobody types it - so the
+    /// rules below err toward adding a form rather than missing one.
+    static func labelSearchTerms(_ labels: [String]) -> [String] {
+        var terms: [String] = []
+        terms.reserveCapacity(labels.count * 2)
+        for label in labels {
+            terms.append(label)
+            terms.append(contentsOf: pluralForms(of: label))
+        }
+        return terms
+    }
+
+    /// English plural(s) of a label; for a multi-word label only the last
+    /// word is inflected ("golf ball" -> "golf balls"). Empty when the label
+    /// already looks plural ("sunglasses", "ferns").
+    static func pluralForms(of label: String) -> [String] {
+        guard let lastSpace = label.lastIndex(of: " ") else { return pluralForms(ofWord: label) }
+        let head = label[...lastSpace]
+        return pluralForms(ofWord: String(label[label.index(after: lastSpace)...])).map { String(head) + $0 }
+    }
+
+    private static let irregularPlurals: [String: [String]] = [
+        "person": ["people", "persons"],
+        "man": ["men"],
+        "woman": ["women"],
+        "child": ["children"],
+        "mouse": ["mice"],
+        "goose": ["geese"],
+        "tooth": ["teeth"],
+        "foot": ["feet"],
+        "ox": ["oxen"],
+        "cactus": ["cacti", "cactuses"],
+        "fungus": ["fungi", "funguses"],
+        "die": ["dice"],
+    ]
+
+    private static func pluralForms(ofWord word: String) -> [String] {
+        if let irregular = irregularPlurals[word] { return irregular }
+        guard let last = word.last, word.count > 1 else { return [] }
+        let beforeLast = word.dropLast().last
+        let isVowel: (Character?) -> Bool = { $0.map { "aeiou".contains($0) } ?? false }
+
+        // glass, bus, dish, bench, box
+        if word.hasSuffix("ss") || word.hasSuffix("us") || word.hasSuffix("sh")
+            || word.hasSuffix("ch") || last == "x" || last == "z" {
+            return [word + "es"]
+        }
+        // Already plural: ferns, shoes, sunglasses.
+        if last == "s" { return [] }
+        // berry -> berries (but toy -> toys, below)
+        if last == "y", !isVowel(beforeLast) { return [String(word.dropLast()) + "ies"] }
+        // knife -> knives
+        if word.hasSuffix("fe") { return [String(word.dropLast(2)) + "ves"] }
+        // leaf -> leaves, roof -> roofs: English does both, so offer both.
+        if last == "f", beforeLast != "f" { return [String(word.dropLast()) + "ves", word + "s"] }
+        // tomato -> tomatoes, piano -> pianos: likewise.
+        if last == "o", !isVowel(beforeLast) { return [word + "es", word + "s"] }
+        return [word + "s"]
+    }
+
+    // MARK: - Query words
+
+    /// The words a query must all match (AND), folded like the blob.
+    ///
+    /// Split on spaces, and also on a `+` that sits **between two letters**,
+    /// so "desk+laptop" means the same as "desk laptop" (people type `+` for
+    /// "and"). A `+` next to anything else stays part of the word, which
+    /// keeps "c++", "g++", "c+" and "1+1" searchable as written.
+    static func queryWords(_ query: String) -> [String] {
+        query
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .split(separator: " ")
+            .flatMap { splitOnLetterPlus(String($0)) }
+    }
+
+    private static func splitOnLetterPlus(_ word: String) -> [String] {
+        guard word.contains("+") else { return [word] }
+        let characters = Array(word)
+        var words: [String] = []
+        var current = ""
+        for (offset, character) in characters.enumerated() {
+            if character == "+",
+               offset > 0, offset < characters.count - 1,
+               characters[offset - 1].isLetter, characters[offset + 1].isLetter {
+                words.append(current)
+                current = ""
+            } else {
+                current.append(character)
+            }
+        }
+        words.append(current)
+        return words.filter { !$0.isEmpty }
+    }
+
     /// Filter + order `items` for display.
     ///
     /// Rules:
@@ -334,13 +465,14 @@ struct FilterState: Equatable {
     /// 2. If a tag filter is active, keep only items carrying that tag.
     /// 3. The content-kind chip narrows next (see `matches(_:chip:)`).
     /// 4. A non-empty query that does not start with `#` matches items whose
-    ///    title, text content, OCR text, tag names, source app, or file name(s)
-    ///    contain every word of the query, case- and diacritic-insensitively
-    ///    (see `searchBlob(for:)`). Multi-word queries are AND'd across all of
-    ///    those fields combined, not per-field. An image with none of those
-    ///    fields set (no OCR text, no tags, no matching source app) still
-    ///    matches nothing, as before. A `#…` query is tag-autocomplete mode
-    ///    and does not narrow the list at all.
+    ///    title, text content, OCR text, image labels, tag names, source app,
+    ///    or file name(s) contain every word of the query, case- and
+    ///    diacritic-insensitively (see `searchBlob(for:)`). Multi-word queries
+    ///    are AND'd across all of those fields combined, not per-field; a `+`
+    ///    between two letters separates words too (`queryWords`). An image
+    ///    with none of those fields set (not analyzed yet, no tags, no
+    ///    matching source app) still matches nothing, as before. A `#…` query
+    ///    is tag-autocomplete mode and does not narrow the list at all.
     /// 5. Pinned items float to the top — except in folder scope, where the
     ///    manual drag order from `folderSortIndex` replaces this step entirely,
     ///    and in trash scope (5E), where `trashSort` does.
@@ -380,10 +512,7 @@ struct FilterState: Equatable {
         // ordinary character and has to be searched for, or typing `#` would
         // silently empty the list.
         if !query.isEmpty && !(Features.tagsEnabled && query.hasPrefix("#")) {
-            let words = query
-                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
-                .split(separator: " ")
-                .map(String.init)
+            let words = queryWords(query)
             base = base.filter { item in
                 let blob = searchBlob(for: item)
                 return words.allSatisfy { blob.contains($0) }

@@ -18,6 +18,7 @@ exit(MainActor.assumeIsolated {
         ("FolderTests", FolderTests.tests),
         ("FolderUXTests", FolderUXTests.tests),
         ("FilterStateTests", FilterStateTests.tests),
+        ("ImageAnalysisTests", ImageAnalysisTests.tests),
         ("TagsChipTests", TagsChipTests.tests),
         ("ClipTitleTests", ClipTitleTests.tests),
         ("WindowReopenTests", WindowReopenTests.tests),
