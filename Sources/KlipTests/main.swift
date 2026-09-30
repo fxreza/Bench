@@ -20,6 +20,7 @@ exit(MainActor.assumeIsolated {
         ("FilterStateTests", FilterStateTests.tests),
         ("ImageAnalysisTests", ImageAnalysisTests.tests),
         ("SemanticImageSearchTests", SemanticImageSearchTests.tests),
+        ("SemanticSearchTests", SemanticSearchTests.tests),
         ("TagsChipTests", TagsChipTests.tests),
         ("ClipTitleTests", ClipTitleTests.tests),
         ("WindowReopenTests", WindowReopenTests.tests),

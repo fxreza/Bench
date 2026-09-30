@@ -229,30 +229,65 @@ struct FilterState: Equatable {
         }
     }
 
+    /// What a query is matched against for one item, in two parts that match
+    /// differently (see `matchesQuery`).
+    struct SearchFields {
+        /// Case- and diacritic-folded text, matched by **substring**: a
+        /// query word anywhere inside it counts, so "manu" finds "manual"
+        /// and "invoice" finds "Invoice#4471".
+        let text: String
+        /// The folded words of the image's Vision labels plus their plurals,
+        /// matched **whole-word**: a query word has to *be* one of them.
+        let labelWords: Set<String>
+    }
+
     /// Case- and diacritic-folded search blob for one item, built once per
     /// filter pass (never per query word). Pulls in every field the query is
-    /// allowed to match: `textContent` (the 500-char preview for large,
-    /// file-backed text — never the full file, per `ClipboardStore.fullText`'s
-    /// doc comment: filtering must not read files), `ocrText`, tag names,
-    /// `sourceApp`, and file names (`fileAttachment.originalName` plus
-    /// `additionalNames`). Link/email/phone/code items already store their
-    /// text in `textContent`, so they need no extra field. A clip's title
-    /// joins the blob too, so `⌘F` finds a named clip by its name.
+    /// allowed to match by substring: `textContent` (the 500-char preview
+    /// for large, file-backed text — never the full file, per
+    /// `ClipboardStore.fullText`'s doc comment: filtering must not read
+    /// files), `ocrText`, tag names, `sourceApp`, and file names
+    /// (`fileAttachment.originalName` plus `additionalNames`).
+    /// Link/email/phone/code items already store their text in
+    /// `textContent`, so they need no extra field. A clip's title joins the
+    /// blob too, so `⌘F` finds a named clip by its name.
     ///
-    /// Image clips also contribute what `ImageAnalysisService` found in them:
-    /// the text read out of the image (`ocrText`) and what it shows
-    /// (`imageLabels`, each with its English plural so "flowers" finds a
-    /// clip labelled "flower" - see `labelSearchTerms`). An image that has
-    /// not been analyzed yet contributes only its tags, title and source
-    /// app, as before.
+    /// Image clips also contribute the text `ImageAnalysisService` read out
+    /// of them (`ocrText`). What an image *shows* (`imageLabels`) is not in
+    /// this blob any more: see `labelWords(_:)` for why labels are matched
+    /// whole-word instead. An image that has not been analyzed yet
+    /// contributes only its tags, title and source app, as before.
     static func searchBlob(for item: ClipboardItem) -> String {
+        searchFields(for: item).text
+    }
+
+    /// Both halves of what `item` is searched by, from the cache when the
+    /// item has not changed since they were built.
+    static func searchFields(for item: ClipboardItem) -> SearchFields {
         let stamp = BlobStamp(item)
         if let cached = blobCache[item.id], cached.stamp == stamp {
-            return cached.blob
+            return cached.fields
         }
-        let blob = buildSearchBlob(for: item)
-        cache(blob, stamp: stamp, for: item)
-        return blob
+        let fields = SearchFields(
+            text: buildSearchBlob(for: item),
+            labelWords: item.imageLabels.map(labelWords) ?? []
+        )
+        cache(fields, stamp: stamp, for: item)
+        return fields
+    }
+
+    /// Does `item` contain every one of `words` (already folded by
+    /// `queryWords`)? Each word may land in a different field, as before:
+    /// substring anywhere in the text blob, or an exact label word.
+    ///
+    /// The label set is tried first because it is a hash lookup, and only
+    /// when the item has labels at all (hashing the word for an empty set
+    /// would be pure cost on every text clip).
+    static func matchesQuery(_ item: ClipboardItem, words: [String]) -> Bool {
+        let fields = searchFields(for: item)
+        return words.allSatisfy { word in
+            (!fields.labelWords.isEmpty && fields.labelWords.contains(word)) || fields.text.contains(word)
+        }
     }
 
     // MARK: - Blob cache (5A-15)
@@ -291,7 +326,10 @@ struct FilterState: Equatable {
 
     private struct CachedBlob {
         let stamp: BlobStamp
-        let blob: String
+        let fields: SearchFields
+        /// What this entry counts against the budget, remembered so eviction
+        /// subtracts exactly what insertion added.
+        let bytes: Int
     }
 
     private static var blobCache: [UUID: CachedBlob] = [:]
@@ -302,14 +340,17 @@ struct FilterState: Equatable {
     /// first, so the tail pays the old cost rather than everything thrashing).
     private static let blobCacheByteBudget = 16 * 1024 * 1024
 
-    private static func cache(_ blob: String, stamp: BlobStamp, for item: ClipboardItem) {
+    private static func cache(_ fields: SearchFields, stamp: BlobStamp, for item: ClipboardItem) {
         if let existing = blobCache[item.id] {
-            blobCacheBytes -= existing.blob.utf8.count
+            blobCacheBytes -= existing.bytes
             blobCache[item.id] = nil
         }
-        let size = blob.utf8.count
+        // The label words are a handful of short strings per image; counting
+        // their bytes keeps the budget honest without pretending to measure
+        // the Set's own overhead.
+        let size = fields.text.utf8.count + fields.labelWords.reduce(0) { $0 + $1.utf8.count }
         guard blobCacheBytes + size <= blobCacheByteBudget else { return }
-        blobCache[item.id] = CachedBlob(stamp: stamp, blob: blob)
+        blobCache[item.id] = CachedBlob(stamp: stamp, fields: fields, bytes: size)
         blobCacheBytes += size
     }
 
@@ -320,7 +361,7 @@ struct FilterState: Equatable {
         guard blobCache.count > items.count + 512 else { return }
         let live = Set(items.map { $0.id })
         for (id, entry) in blobCache where !live.contains(id) {
-            blobCacheBytes -= entry.blob.utf8.count
+            blobCacheBytes -= entry.bytes
             blobCache[id] = nil
         }
     }
@@ -339,9 +380,7 @@ struct FilterState: Equatable {
         if let title = item.displayTitle { parts.append(title) }
         if let text = item.textContent { parts.append(text) }
         if let ocr = item.ocrText, !ocr.isEmpty { parts.append(ocr) }
-        if let labels = item.imageLabels, !labels.isEmpty {
-            parts.append(labelSearchTerms(labels).joined(separator: " "))
-        }
+        // No `imageLabels` here on purpose - they go into `labelWords`.
         if !item.tags.isEmpty { parts.append(item.tags.joined(separator: " ")) }
         if let sourceApp = item.sourceApp { parts.append(sourceApp) }
         if let attachment = item.fileAttachment {
@@ -356,16 +395,49 @@ struct FilterState: Equatable {
 
     // MARK: - Image labels in search
 
+    /// The words an image's labels can be found by: every word of every
+    /// label and of its plural form(s), folded like the query. `["flower",
+    /// "golf ball"]` -> `{"flower", "flowers", "golf", "ball", "balls"}`.
+    ///
+    /// **Whole words, not substrings.** Labels used to join the substring
+    /// blob, and that was fine for text but not for a vocabulary of short
+    /// English nouns: "man" matched the labels "mango", "german shepherd",
+    /// "doberman" and "performance", and "car" matched "cardboard box". A
+    /// label is a *claim about what the picture shows*, so a query word has
+    /// to name it exactly (or its plural) for the claim to count. Real text
+    /// keeps substring matching (`searchBlob`): there, finding "manual" from
+    /// "manu" while typing is exactly what people expect.
+    ///
+    /// The cost is that a half-typed word ("flo") no longer finds a label
+    /// ("flower") until it is complete. That is a small loss: the list only
+    /// updates once typing pauses (the debounce), usually on a whole word,
+    /// and a label match is a best guess about the picture, not text the
+    /// user remembers typing.
+    ///
+    /// Splitting multi-word labels into words keeps what substring matching
+    /// did right: "keyboard" still finds "computer keyboard", and "computer
+    /// keyboard" still finds it too, because each query word is matched on
+    /// its own (AND), the same as for text.
+    ///
+    /// Built once per item and cached with the text blob, so a query pays a
+    /// hash lookup per image, not a scan.
+    static func labelWords(_ labels: [String]) -> Set<String> {
+        guard !labels.isEmpty else { return [] }
+        let folded = labelSearchTerms(labels)
+            .joined(separator: " ")
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+        return Set(folded.split(whereSeparator: \.isWhitespace).map(String.init))
+    }
+
     /// Each label followed by its plural form(s): `["flower", "computer
     /// monitor"]` -> `["flower", "flowers", "computer monitor", "computer
     /// monitors"]`.
     ///
-    /// Only the plural is added because search is a substring match: the
-    /// singular query "flower" already finds "flowers", but "flowers" can
-    /// never find "flower". Vision's labels are English singular nouns, so
-    /// "the query is plural, the label is not" is the gap to close. A plural
-    /// that comes out odd ("golves") costs nothing - nobody types it - so the
-    /// rules below err toward adding a form rather than missing one.
+    /// Only the plural is added because Vision's labels are English
+    /// singular nouns, so "the query is plural, the label is not" is the gap
+    /// to close. A plural that comes out odd ("golves") costs nothing -
+    /// nobody types it - so the rules below err toward adding a form rather
+    /// than missing one.
     static func labelSearchTerms(_ labels: [String]) -> [String] {
         var terms: [String] = []
         terms.reserveCapacity(labels.count * 2)
@@ -458,6 +530,73 @@ struct FilterState: Equatable {
         return words.filter { !$0.isEmpty }
     }
 
+    // MARK: - Smart image search
+
+    /// What the smart image search (`SemanticImageSearching`) is asked for a
+    /// typed query, or nil when it should not be asked at all.
+    ///
+    /// Search owns *when* to ask (the engine owns what counts as a match):
+    /// - Never for an empty query, and never for anything starting with `#`,
+    ///   whether or not tags are shown: it is either a tag query or a literal
+    ///   token (a hex colour, an issue number, a hashtag), never a description
+    ///   of a picture, and a model asked about it can only add noise.
+    /// - Never for a single character: one letter describes nothing, and it
+    ///   is what sits in the field for a moment at the start of every query.
+    ///
+    /// The words are the same ones text search uses (a `+` between letters
+    /// means "and", so "desk+laptop" asks about "desk laptop"), but not
+    /// folded: the model has its own tokenizer, and case and accents are its
+    /// business. Joining them with single spaces also makes this the
+    /// identity of an answer: "woman" and "woman " are the same question, so
+    /// typing a trailing space does not ask again or throw away the result.
+    static func semanticQuery(_ query: String) -> String? {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.hasPrefix("#") else { return nil }
+        let words = trimmed.split(separator: " ").flatMap { splitOnLetterPlus(String($0)) }
+        let key = words.joined(separator: " ")
+        guard key.count > 1 else { return nil }
+        return key
+    }
+
+    /// Orders the smart-search-only hits: best score first, then newest, then
+    /// id, so the result is a strict weak ordering and never shuffles two
+    /// equal answers between passes. A NaN score (a broken engine) sorts
+    /// last instead of breaking the sort.
+    ///
+    /// `pinnedFirst` gives the tail the same pinned-first partition the
+    /// literal hits have in All and Favorites, so with no literal hits the
+    /// list reads exactly like every other Klip list - "Pinned" header,
+    /// pinned rows, separator, the rest - and the default selection (first
+    /// unpinned row) is the best unpinned match. Folder and trash scopes have
+    /// no pinned run, so there it is pure score order.
+    private static func rankSemanticHits(
+        _ hits: [(item: ClipboardItem, score: Float)],
+        pinnedFirst: Bool
+    ) -> [ClipboardItem] {
+        let ranked = hits.sorted { a, b in
+            let (x, y) = (a.score.isNaN ? -.infinity : a.score, b.score.isNaN ? -.infinity : b.score)
+            if x != y { return x > y }
+            if a.item.timestamp != b.item.timestamp { return a.item.timestamp > b.item.timestamp }
+            return a.item.id.uuidString < b.item.id.uuidString
+        }.map(\.item)
+        return pinnedFirst ? pinnedPartition(ranked) : ranked
+    }
+
+    /// Stable partition: pinned items first, each group in its input order.
+    /// (The original used `sorted { $0.isPinned && !$1.isPinned }`, which is
+    /// not a strict weak ordering and let `sort` shuffle equal elements
+    /// arbitrarily.)
+    private static func pinnedPartition(_ items: [ClipboardItem]) -> [ClipboardItem] {
+        var pinned: [ClipboardItem] = []
+        var rest: [ClipboardItem] = []
+        pinned.reserveCapacity(items.count)
+        rest.reserveCapacity(items.count)
+        for item in items {
+            if item.isPinned { pinned.append(item) } else { rest.append(item) }
+        }
+        return pinned + rest
+    }
+
     /// Filter + order `items` for display.
     ///
     /// Rules:
@@ -465,33 +604,66 @@ struct FilterState: Equatable {
     /// 2. If a tag filter is active, keep only items carrying that tag.
     /// 3. The content-kind chip narrows next (see `matches(_:chip:)`).
     /// 4. A non-empty query that does not start with `#` matches items whose
-    ///    title, text content, OCR text, image labels, tag names, source app,
-    ///    or file name(s) contain every word of the query, case- and
-    ///    diacritic-insensitively (see `searchBlob(for:)`). Multi-word queries
-    ///    are AND'd across all of those fields combined, not per-field; a `+`
-    ///    between two letters separates words too (`queryWords`). An image
-    ///    with none of those fields set (not analyzed yet, no tags, no
-    ///    matching source app) still matches nothing, as before. A `#…` query
-    ///    is tag-autocomplete mode and does not narrow the list at all.
+    ///    title, text content, OCR text, tag names, source app, or file
+    ///    name(s) contain every word of the query, case- and
+    ///    diacritic-insensitively (see `searchBlob(for:)`), or whose Vision
+    ///    labels contain the word as a whole word (see `labelWords(_:)`).
+    ///    Multi-word queries are AND'd across all of those fields combined,
+    ///    not per-field; a `+` between two letters separates words too
+    ///    (`queryWords`). An image with none of those fields set (not
+    ///    analyzed yet, no tags, no matching source app) matches nothing by
+    ///    text, as before. A `#…` query is tag-autocomplete mode and does not
+    ///    narrow the list at all.
     /// 5. Pinned items float to the top — except in folder scope, where the
     ///    manual drag order from `folderSortIndex` replaces this step entirely,
     ///    and in trash scope (5E), where `trashSort` does.
+    /// 6. Smart image search: an **image** that survived steps 1-3, did not
+    ///    match step 4, and is in `semanticMatches` (the engine's answer for
+    ///    this query, see `SemanticImageSearching`) is a hit too. These come
+    ///    after every literal hit, best score first (`rankSemanticHits`).
+    ///    They only ever join a narrowing query: with no query, or a `#`
+    ///    query, `semanticMatches` is ignored. Ids that are not images in
+    ///    this filtered base (text clips, files, clips another filter
+    ///    removed, deleted clips) are ignored too.
     ///
     /// In trash scope the caller passes `ClipboardStore.trashedItems` rather
-    /// than `items`; steps 2-4 are identical, which is the whole point — the
-    /// trash is searched, tag-filtered and chip-filtered exactly like the
-    /// history.
+    /// than `items`; steps 2-4 and 6 are identical, which is the whole point
+    /// — the trash is searched, tag-filtered and chip-filtered exactly like
+    /// the history.
     ///
-    /// The pinned-first step is a **stable partition**: pinned items keep their
-    /// relative order and so do the rest. (The original used
-    /// `sorted { $0.isPinned && !$1.isPinned }`, which is not a strict weak
-    /// ordering and let `sort` shuffle equal elements arbitrarily.)
+    /// The pinned-first step is a **stable partition**: pinned items keep
+    /// their relative order and so do the rest (`pinnedPartition`).
     ///
-    /// No relevance ranking is applied anywhere here, intentionally: the list
-    /// stays in chronological (pinned-first) order no matter which fields a
-    /// query happened to match, so the user's muscle memory for row position
-    /// keeps working.
-    static func apply(_ items: [ClipboardItem], _ f: FilterState) -> [ClipboardItem] {
+    /// **Ordering.** Literal hits (step 4) get no relevance ranking,
+    /// intentionally: they stay in chronological (pinned-first) order no
+    /// matter which fields a query happened to match, so the user's muscle
+    /// memory for row position keeps working. A literal hit is binary - the
+    /// clip contains "invoice" or it does not - so recency is the only useful
+    /// order among them.
+    ///
+    /// Smart-search hits are the opposite: a picture of a woman does not
+    /// *contain* "woman", it resembles it to some degree, and the matches
+    /// range from obvious to borderline. In chronological order a borderline
+    /// match copied this morning would sit above the photo the user is
+    /// actually picturing, so among themselves they are ranked by score.
+    /// They go *below* the literal hits, not interleaved, for three reasons:
+    /// - They arrive later (the engine answers after the text pass has been
+    ///   drawn). Appending means the rows already on screen never move, so
+    ///   nothing jumps under the pointer and the highlighted row - the one ↩
+    ///   pastes - is not pushed down or swapped for another.
+    /// - A clip that literally says what was typed is the stronger evidence:
+    ///   someone typing "woman" who sees a note saying "woman" first is not
+    ///   surprised, whereas an image ranked above it on a model's hunch
+    ///   might well be.
+    /// - With no literal hits (the common case for "girl at a desk") the tail
+    ///   *is* the list, best match first, and ↩ pastes the best match.
+    /// An image that matches both ways is a literal hit and stays in its
+    /// chronological place; it is never listed twice.
+    static func apply(
+        _ items: [ClipboardItem],
+        _ f: FilterState,
+        semanticMatches: [UUID: Float] = [:]
+    ) -> [ClipboardItem] {
         sweepBlobCache(keeping: items)
         var base = items
         // `.trash` is skipped along with `.all`: the caller already handed in
@@ -506,6 +678,7 @@ struct FilterState: Equatable {
         if f.chip != .all {
             base = base.filter { matches($0, chip: f.chip) }
         }
+        var semanticHits: [(item: ClipboardItem, score: Float)] = []
         let query = f.query.trimmingCharacters(in: .whitespaces)
         // A leading `#` means "this is a tag query, the tag filter handles it"
         // — but only while there is a tag UI. With tags hidden it is an
@@ -513,35 +686,46 @@ struct FilterState: Equatable {
         // silently empty the list.
         if !query.isEmpty && !(Features.tagsEnabled && query.hasPrefix("#")) {
             let words = queryWords(query)
-            base = base.filter { item in
-                let blob = searchBlob(for: item)
-                return words.allSatisfy { blob.contains($0) }
+            // One pass sorts every item into literal hit, smart-search hit or
+            // miss. The dictionary lookup only runs for images that missed,
+            // and not at all while there is no answer (the first pass of every
+            // query), so the text-only cost is what it was.
+            var literal: [ClipboardItem] = []
+            for item in base {
+                if matchesQuery(item, words: words) {
+                    literal.append(item)
+                } else if !semanticMatches.isEmpty, item.type == .image,
+                          let score = semanticMatches[item.id] {
+                    semanticHits.append((item, score))
+                }
             }
-        }
-        // 5E: the trash is ordered by its own picker, and never pinned-first
-        // — a pinned clip that was deleted is just a deleted clip, and having
-        // it jump the queue above the deletion someone came here to undo
-        // would defeat the default sort.
-        if case .trash = f.scope {
-            return f.trashSort.order(base)
+            base = literal
         }
 
-        // 5C: inside a folder the user's own drag order wins outright —
-        // including over pins. Hand-sorting a folder is how the clips used
-        // most often are kept at the top, and a pinned row jumping out of the
-        // position it was dragged to would defeat that. All and Favorites are
-        // unaffected and stay chronological, pinned first.
-        if case .folder = f.scope {
-            return ClipboardStore.folderOrder(base)
+        let ordered: [ClipboardItem]
+        let pinnedFirst: Bool
+        switch f.scope {
+        case .trash:
+            // 5E: the trash is ordered by its own picker, and never
+            // pinned-first — a pinned clip that was deleted is just a deleted
+            // clip, and having it jump the queue above the deletion someone
+            // came here to undo would defeat the default sort.
+            ordered = f.trashSort.order(base)
+            pinnedFirst = false
+        case .folder:
+            // 5C: inside a folder the user's own drag order wins outright —
+            // including over pins. Hand-sorting a folder is how the clips
+            // used most often are kept at the top, and a pinned row jumping
+            // out of the position it was dragged to would defeat that. All
+            // and Favorites are unaffected and stay chronological, pinned
+            // first.
+            ordered = ClipboardStore.folderOrder(base)
+            pinnedFirst = false
+        case .all, .favorites:
+            ordered = pinnedPartition(base)
+            pinnedFirst = true
         }
-
-        var pinned: [ClipboardItem] = []
-        var rest: [ClipboardItem] = []
-        pinned.reserveCapacity(base.count)
-        rest.reserveCapacity(base.count)
-        for item in base {
-            if item.isPinned { pinned.append(item) } else { rest.append(item) }
-        }
-        return pinned + rest
+        guard !semanticHits.isEmpty else { return ordered }
+        return ordered + rankSemanticHits(semanticHits, pinnedFirst: pinnedFirst)
     }
 }

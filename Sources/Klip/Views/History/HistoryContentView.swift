@@ -28,6 +28,10 @@ struct HistoryContentView: View {
     @FocusState private var isEditTitleFocused: Bool
     @FocusState private var isFolderFieldFocused: Bool
 
+    /// Whether the list's empty state ("No matches" and friends) is on
+    /// screen right now - see `listPane` for why smart search cares.
+    @State private var emptyStateIsShowing = false
+
     /// Commits the edit once focus has genuinely left the editor.
     ///
     /// Edit mode has two fields — the title and the body — and clicking from
@@ -341,7 +345,19 @@ struct HistoryContentView: View {
     @ViewBuilder
     private var listPane: some View {
         if viewModel.filteredItems.isEmpty {
-            emptyState
+            // Text found nothing but the smart image search has not answered
+            // yet: "No matches" now would flash up between the old results
+            // and the pictures arriving, so hold it back until the answer is
+            // in. Unless it is already on screen (the previous query found
+            // nothing either): taking it away just to put it back once the
+            // answer lands would be a blink of its own.
+            if viewModel.mayStillShowImageMatches && !emptyStateIsShowing {
+                SmartSearchWaitingState()
+            } else {
+                emptyState
+                    .onAppear { emptyStateIsShowing = true }
+                    .onDisappear { emptyStateIsShowing = false }
+            }
         } else {
             ClipList(store: store, viewModel: viewModel)
         }
@@ -382,5 +398,49 @@ struct HistoryContentView: View {
     private func emptyStateTitle(isFiltered: Bool, trashIsEmpty: Bool) -> String {
         if trashIsEmpty { return "Trash is empty" }
         return isFiltered ? "No matches" : "No clipboard history"
+    }
+}
+
+/// The empty list while the smart image search is still working on a query
+/// that matched no text.
+///
+/// Blank at first, and only after `delay` does it say anything - in the
+/// same icon-and-line layout as "No matches", which is usually what replaces
+/// it. The engine normally answers well inside that delay (it runs on every
+/// debounced keystroke), so the common case shows nothing at all: no
+/// spinner blinking on each query, no "Searching…" flashing between the
+/// text results and the pictures. The line only appears when the wait is
+/// long enough to be noticed (a first query while the model is still
+/// loading), which is exactly when it is worth saying why the list is
+/// empty.
+///
+/// This is the only on-screen trace of smart search in progress. A
+/// spinner in the search field was considered and left out: with results
+/// usually landing within a frame or two of the text ones, it would be
+/// motion without information.
+private struct SmartSearchWaitingState: View {
+    static let delay: Duration = .milliseconds(400)
+
+    @State private var showsMessage = false
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(Theme.icon(34))
+                .foregroundStyle(.tertiary)
+            Text("Searching images…")
+                .font(.klip(.preview))
+                .foregroundStyle(.secondary)
+        }
+        .opacity(showsMessage ? 1 : 0)
+        .animation(.easeOut(duration: 0.2), value: showsMessage)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Cancelled when the view goes away, so an answer that lands inside
+        // the delay never lets the message show.
+        .task {
+            try? await Task.sleep(for: Self.delay)
+            guard !Task.isCancelled else { return }
+            showsMessage = true
+        }
     }
 }

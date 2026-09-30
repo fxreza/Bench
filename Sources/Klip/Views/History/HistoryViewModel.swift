@@ -69,15 +69,34 @@ final class HistoryViewModel: ObservableObject {
 
             searchDebounceTask?.cancel()
 
+            // A keystroke abandons the smart image search still working on
+            // the query being typed over: its answer would only be thrown
+            // away when it arrived. One that leaves the words as they were
+            // (a trailing space) does not - it is still the same question.
+            if FilterState.semanticQuery(newValue) != semanticTaskQuery {
+                cancelSemanticSearch(keepPending: true)
+            }
+
             if newValue.isEmpty {
                 // Instantly update when search text is cleared
                 debouncedSearchText = newValue
+                // Settles the smart search even when the debounced text was
+                // already empty and its didSet had nothing to do.
+                refreshSemanticSearch()
             } else {
                 searchDebounceTask = Task { [weak self] in
                     // 200ms debounce
                     try? await Task.sleep(nanoseconds: 200_000_000)
                     guard !Task.isCancelled else { return }
-                    await MainActor.run { self?.debouncedSearchText = newValue }
+                    await MainActor.run {
+                        self?.debouncedSearchText = newValue
+                        // Typing a letter and deleting it again lands the
+                        // debounced text on the value it already had, so its
+                        // didSet does nothing - but the keystrokes in between
+                        // cancelled the smart search for it. Ask again (a
+                        // no-op when the answer is already here).
+                        self?.refreshSemanticSearch()
+                    }
                 }
             }
         }
@@ -88,6 +107,10 @@ final class HistoryViewModel: ObservableObject {
             guard debouncedSearchText != oldValue else { return }
             // Don't reset selection when in tag autocomplete mode (list is unchanged)
             applyFilters(resetSelection: (Features.tagsEnabled && debouncedSearchText.hasPrefix("#")) ? .keep : .defaultItem)
+            // Text results are on screen now; the smart image search adds
+            // its matches below them when it answers
+            // (`HistoryViewModel+SmartSearch.swift`).
+            refreshSemanticSearch()
         }
     }
 
@@ -325,10 +348,78 @@ final class HistoryViewModel: ObservableObject {
     // `filteredItems`, …). This block is a marker for future 3E-owned state,
     // kept separate from sibling tasks' own `// MARK: - 3x state` blocks.
 
+    // MARK: - Smart image search state
+    //
+    // Behaviour lives in `HistoryViewModel+SmartSearch.swift`; only stored
+    // state is here, matching the 3A/3B blocks below.
+
+    /// Finds image clips by what their picture shows ("woman", "girl at a
+    /// desk"), on top of the text search. See `SemanticImageSearching` for
+    /// the contract.
+    ///
+    /// **Where the real engine comes in.** This defaults to
+    /// `NoSemanticImageSearch.shared` (never available, so search behaves
+    /// exactly as it did without smart search), which is what tests and a
+    /// build without the model get. The app hands over the real engine where
+    /// it builds the window: in `KlipFeature.start()`, right after
+    /// `historyWindowController = HistoryWindowController(store: store)`,
+    /// set `historyWindowController?.viewModel.semanticSearch = <engine>`.
+    /// Settable rather than init-only so the window controller does not
+    /// have to know about the engine; `init(store:semanticSearch:)` takes it
+    /// too, for anything that builds a view model directly.
+    ///
+    /// Swapping it drops the previous engine's answer and asks the new one
+    /// about the query on screen, if there is one.
+    var semanticSearch: SemanticImageSearching {
+        didSet {
+            guard semanticSearch !== oldValue else { return }
+            semanticSearchDidChange()
+        }
+    }
+
+    /// The engine's latest answer and the question it answers
+    /// (`FilterState.semanticQuery`). Kept until the query changes, so a
+    /// chip, scope or store change re-filters the same answer without
+    /// asking again, and only used while its query is still the one on
+    /// screen (`activeSemanticMatches`).
+    var semanticAnswer: (query: String, matches: [UUID: Float])?
+
+    /// The engine request in flight, and the question it is asking. Cancelled
+    /// by the next keystroke; its answer is dropped unless both still match
+    /// when it lands.
+    var semanticTask: Task<Void, Never>?
+    var semanticTaskQuery: String?
+
+    /// True while the engine is working on a query that has no answer on
+    /// screen yet - including the moment between a keystroke cancelling that
+    /// work and the debounce asking about the new text. The list's empty
+    /// state reads it (through `mayStillShowImageMatches`) so "No matches"
+    /// is not shown for a query whose image matches are still coming: it
+    /// would flash, then be contradicted when they arrive.
+    @Published var isSemanticSearchPending = false
+
+    /// Set when smart-search results were appended *below* an existing
+    /// selection. `ClipList` scrolls back to the selected row when the row
+    /// count changes (right for a new search or a delete); for rows added
+    /// under the ones on screen that would undo the user's own scrolling, so
+    /// it checks this, skips the scroll and clears it. Not `@Published`, like
+    /// `isStepMove`: it only qualifies a change that is already published.
+    var semanticRowsAppended = false
+
     // MARK: - Init
 
-    init(store: ClipboardStore) {
+    init(store: ClipboardStore, semanticSearch: SemanticImageSearching) {
         self.store = store
+        self.semanticSearch = semanticSearch
+    }
+
+    /// Smart image search off (`NoSemanticImageSearch`) until the app hands
+    /// over the real engine through `semanticSearch`. A separate init rather
+    /// than a default argument because `NoSemanticImageSearch.shared` is
+    /// main-actor isolated, and a default argument is evaluated outside the
+    /// init's isolation.
+    convenience init(store: ClipboardStore) {
+        self.init(store: store, semanticSearch: NoSemanticImageSearch.shared)
     }
 
     // MARK: - Derived values
@@ -410,11 +501,23 @@ final class HistoryViewModel: ObservableObject {
     /// blocks that used to live in `HistoryContentView`'s onChange/onReceive
     /// handlers.
     func applyFilters(resetSelection: SelectionReset) {
+        // Only the smart-search answer path may tell `ClipList` "rows were
+        // just appended, do not scroll"; it raises this again after calling
+        // here. Every other recompute is an ordinary list change.
+        semanticRowsAppended = false
+
         // 5E: the trash is a different array, not a filtered view of the
         // history — `ClipboardStore` keeps it that way deliberately so nothing
         // that reads `items` can ever see a deleted clip. Everything after
         // this line (search, tag, chip, selection) is identical either way.
-        let currentFiltered = FilterState.apply(filterSource, filterState)
+        // The smart-search answer rides along whenever it belongs to the
+        // query on screen, so every re-filter (a chip, a scope, a new clip)
+        // keeps its image matches without asking the engine again.
+        let currentFiltered = FilterState.apply(
+            filterSource,
+            filterState,
+            semanticMatches: activeSemanticMatches
+        )
         self.filteredItems = currentFiltered
 
         // 5A-22: clamp before anything reads `filteredItems[selectedIndex]`.
@@ -778,6 +881,12 @@ final class HistoryViewModel: ObservableObject {
 
         // Recalculate cache immediately and point at the restored / default item
         applyFilters(resetSelection: shouldResetOnOpen ? .defaultItem : .restore(restoreTarget))
+
+        // A query kept from the last open is asked again: the engine may have
+        // indexed images copied since. The previous answer stays on screen
+        // meanwhile (same query), so nothing blinks; with the field reset
+        // this just makes sure nothing is left running.
+        refreshSemanticSearch(force: true)
 
         // Trigger scroll so ClipList brings the selected row into view
         scrollTrigger = true

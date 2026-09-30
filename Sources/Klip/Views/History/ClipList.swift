@@ -30,11 +30,16 @@ struct ClipList: View {
                     // 5A-14: `ForEach(Array(items.enumerated()), …)` copied
                     // 10,000 `(Int, ClipboardItem)` tuples on *every* body
                     // pass. `FilterState.apply` guarantees a pinned-first
-                    // partition, so the pinned run is a prefix: counting it
-                    // costs only the number of pinned items, and the two
-                    // things the index was used for (the "is this the first
-                    // unpinned row" separator, and the click handlers' index)
-                    // are derived from that instead.
+                    // partition of what it lists first (everything, or a
+                    // search's literal hits), so the pinned run is a prefix:
+                    // counting it costs only the number of pinned items, and
+                    // the two things the index was used for (the "is this
+                    // the first unpinned row" separator, and the click
+                    // handlers' index) are derived from that instead. Smart
+                    // image search matches follow with a pinned-first
+                    // partition of their own: with no literal hits theirs is
+                    // the prefix, and otherwise a pinned match sits below
+                    // the separator and just shows its pin.
                     // 5C: in folder scope the list is in the user's own drag
                     // order, so there is no pinned run at the top to head or
                     // separate — a pinned clip sits wherever it was dropped.
@@ -92,6 +97,15 @@ struct ClipList: View {
                 viewModel.scrollTrigger = false
             }
             .onChange(of: viewModel.filteredItems.count) { _, _ in
+                // Smart image search matches arriving only add rows below
+                // the ones already shown, and the selection did not move. If
+                // the selected row is off screen now, it is because the user
+                // scrolled away from it, so this is not the moment to scroll
+                // back.
+                if viewModel.semanticRowsAppended {
+                    viewModel.semanticRowsAppended = false
+                    return
+                }
                 // The list changed under the selection (search, filter,
                 // delete, a new clip arriving). Only re-scroll if the
                 // selected row is no longer on screen — otherwise this would
