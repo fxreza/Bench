@@ -263,6 +263,11 @@ class HistoryWindowController: NSWindowController, NSWindowDelegate {
         // Start collapsed so the card can bounce in.
         viewModel.isPresented = false
 
+        // Opening the panel is the best hint a search is coming: load smart
+        // image search's text encoder now, off the main thread, so the first
+        // query answers in milliseconds instead of ~160 ms.
+        viewModel.semanticSearch.prepareForQueries()
+
         super.showWindow(sender)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)

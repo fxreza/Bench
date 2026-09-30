@@ -30,6 +30,15 @@ protocol SemanticImageSearching: AnyObject, Sendable {
     /// cheap enough to run on each debounced keystroke (text encoding plus a
     /// scan of every stored embedding).
     func matches(for query: String) async -> [UUID: Float]
+
+    /// Warm the engine up ahead of a likely query (the history panel just
+    /// opened), so the first search of a session answers as fast as the
+    /// rest. Cheap to call often; never blocks the caller.
+    func prepareForQueries()
+}
+
+extension SemanticImageSearching {
+    func prepareForQueries() {}
 }
 
 /// Stand-in used when smart image search is unavailable, and in tests that

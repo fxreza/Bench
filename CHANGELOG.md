@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.7 (2026-09-30)
+
+### Added
+
+- Klip: smart image search. Search now also finds images by what the picture shows, using Apple's MobileCLIP model on this Mac: "woman", "girl", "man at a desk", "red car" or "a place for eating" find matching pictures even when no word is attached to them. Picture matches appear below the ordinary text matches, best match first, a moment after you type, so rows already on screen never move. A screenshot that only contains the word you typed is not treated as a picture of it. Existing images are indexed once in the background after launch; the index stays on this Mac and is not synced. The model adds about 190 MB to the app.
+
+### Fixed
+
+- Klip: the words Klip tags images with now match whole words only, so "man" no longer finds pictures tagged "mango" or "german shepherd". Text inside clips still matches parts of words as before.
+
 ## 0.3.6 (2026-09-30)
 
 ### Added

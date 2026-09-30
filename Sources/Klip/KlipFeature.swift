@@ -74,6 +74,9 @@ public final class KlipFeature: BenchFeature {
         self.watcher = watcher
 
         historyWindowController = HistoryWindowController(store: store)
+        // Smart image search: the same engine the queue above keeps indexed
+        // answers "woman" or "a place for eating" in the history search.
+        historyWindowController?.viewModel.semanticSearch = MobileCLIPImageSearch.shared
 
         HotkeyCenter.shared.bind(KlipHotkeys.toggleHistory) { [weak self] in
             self?.toggleHistoryWindow()
