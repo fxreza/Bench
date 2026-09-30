@@ -52,8 +52,26 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
     /// back out into the loose history.
     var title: String? = nil
 
-    // Extracted OCR text (persisted after first extraction)
+    /// Text read out of an image clip by `ImageAnalysisService`.
+    ///
+    /// Three states, and the UI relies on telling them apart:
+    /// - `nil`: not read yet (a fresh capture still in the analysis queue,
+    ///   or an old clip the launch backfill has not reached).
+    /// - `""`: read, and there is no text in the image.
+    /// - anything else: the recognized text, one line per `\n`.
+    ///
+    /// Older builds stored `legacyNoTextSentinel` for "read, no text"; the
+    /// decoder turns that back into `""`, so the sentinel can never reach a
+    /// search blob or the preview pane again.
     var ocrText: String?
+
+    /// What the image shows, as lowercased English labels from Vision's
+    /// classifier (`"flower"`, `"computer keyboard"`, `"screenshot"`), most
+    /// confident first. `nil` means "not analyzed yet"; `[]` means analyzed
+    /// and nothing cleared the confidence floor. Written together with
+    /// `ocrText` by `ClipboardStore.setImageAnalysis` /
+    /// `applyImageAnalyses`, and searched through `FilterState.searchBlob`.
+    var imageLabels: [String]? = nil
 
     /// Lock state — a locked item can never be deleted or evicted.
     var isLocked: Bool = false
@@ -134,7 +152,8 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         contentKey: String? = nil,
         folderSortIndex: Double? = nil,
         deletedAt: Date? = nil,
-        title: String? = nil
+        title: String? = nil,
+        imageLabels: [String]? = nil
     ) {
         self.id = id
         self.type = type
@@ -159,6 +178,7 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         self.folderSortIndex = folderSortIndex
         self.deletedAt = deletedAt
         self.title = title
+        self.imageLabels = imageLabels
     }
 
     enum CodingKeys: String, CodingKey {
@@ -171,6 +191,19 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         case folderSortIndex
         case deletedAt
         case title
+        case imageLabels
+    }
+
+    /// What the old manual "Extract text" button stored when Vision found
+    /// nothing. It was a real string in `ocrText`, so it showed up in search
+    /// (typing "found" matched every text-less image the user had tried) and
+    /// could not be told apart from an image that literally said it. Mapped
+    /// to `""` on decode and by `ClipboardStore.setOCRText`; never written.
+    static let legacyNoTextSentinel = "No text found in this image."
+
+    /// `ocrText` as stored from now on: the legacy sentinel becomes `""`.
+    static func normalizedOCRText(_ text: String?) -> String? {
+        text == legacyNoTextSentinel ? "" : text
     }
 
     init(from decoder: Decoder) throws {
@@ -186,7 +219,11 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         self.isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
         self.isBookmarked = try container.decodeIfPresent(Bool.self, forKey: .isBookmarked) ?? false
         self.tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
-        self.ocrText = try container.decodeIfPresent(String.self, forKey: .ocrText)
+        // The sentinel migration lives here, at the one place every record
+        // passes through - history.json, trash.json and every other Mac's
+        // snapshot - so no load path can bring it back. Costs one string
+        // compare per image clip.
+        self.ocrText = Self.normalizedOCRText(try container.decodeIfPresent(String.self, forKey: .ocrText))
         self.isLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
         self.folderID = try container.decodeIfPresent(UUID.self, forKey: .folderID)
         self.kind = try container.decodeIfPresent(ContentKind.self, forKey: .kind)
@@ -200,6 +237,7 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         self.folderSortIndex = try container.decodeIfPresent(Double.self, forKey: .folderSortIndex)
         self.deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
         self.title = try container.decodeIfPresent(String.self, forKey: .title)
+        self.imageLabels = try container.decodeIfPresent([String].self, forKey: .imageLabels)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -227,6 +265,14 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(folderSortIndex, forKey: .folderSortIndex)
         try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
         try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(imageLabels, forKey: .imageLabels)
+    }
+
+    /// An image clip that `ImageAnalysisQueue` still has to read: either
+    /// half of the analysis missing counts, so a clip whose text came from
+    /// the old manual "Extract text" button still gets its labels.
+    var needsImageAnalysis: Bool {
+        type == .image && (ocrText == nil || imageLabels == nil)
     }
 
     // MARK: - Content identity

@@ -57,7 +57,10 @@ struct SyncDeviceSnapshot: Equatable {
 ///  1. Tombstones from all devices are unioned (newest `deletedAt` per id) and
 ///     pruned at `tombstoneLifetime` (30 days).
 ///  2. Same `id` across devices: the record with the newest `updatedAt` wins
-///     **whole-record**; `tags` are the union across all copies.
+///     **whole-record**; `tags` are the union across all copies, and a
+///     missing or empty `ocrText` / `imageLabels` is filled from whichever
+///     copy has the most (image analysis never bumps `updatedAt`, see
+///     `ClipboardStore.setImageAnalysis`).
 ///  3. A tombstone newer than the surviving record's `updatedAt` deletes it.
 ///     An older tombstone loses — the item was edited (or re-created) after the
 ///     delete, so the edit wins. A **locked** surviving record is never deleted
@@ -203,6 +206,11 @@ enum SyncMerge {
             // Tags are unioned across every copy, not taken from the winner
             // alone — tagging on two Macs at once must not lose either tag.
             winner.tags = unionTags(of: versions.map { $0.item }, startingWith: winner.tags)
+
+            // Image analysis is derived data and is written without bumping
+            // `updatedAt`, so the copy that wins on `updatedAt` is often not
+            // the one that has it. Fill it in from the others.
+            fillImageAnalysis(into: &winner, from: versions)
 
             // 3. A newer tombstone deletes; an older one is outranked by the
             //    edit — **unless the surviving record is locked** (5A-06,
@@ -386,7 +394,8 @@ enum SyncMerge {
 
     /// The older record survives; flags are OR-ed, tags unioned, a folder
     /// membership from either side is kept, and metadata the survivor lacks is
-    /// filled in from the duplicate.
+    /// filled in from the duplicate (image analysis by `analysisRank`, so an
+    /// empty result also gives way to a real one).
     private static func fold(_ loser: Candidate, into winner: Candidate) -> Candidate {
         var merged = winner
         merged.item.isPinned = winner.item.isPinned || loser.item.isPinned
@@ -394,12 +403,63 @@ enum SyncMerge {
         merged.item.isLocked = winner.item.isLocked || loser.item.isLocked
         merged.item.tags = unionTags(of: [winner.item, loser.item], startingWith: winner.item.tags)
         merged.item.folderID = winner.item.folderID ?? loser.item.folderID
-        if merged.item.ocrText == nil { merged.item.ocrText = loser.item.ocrText }
+        if analysisRank(merged.item.ocrText) < analysisRank(loser.item.ocrText) {
+            merged.item.ocrText = loser.item.ocrText
+        }
+        if analysisRank(merged.item.imageLabels) < analysisRank(loser.item.imageLabels) {
+            merged.item.imageLabels = loser.item.imageLabels
+        }
         if merged.item.kind == nil { merged.item.kind = loser.item.kind }
         merged.item.updatedAt = max(winner.item.updatedAt, loser.item.updatedAt)
         merged.origins.formUnion(loser.origins)
         merged.isLocal = winner.isLocal || loser.isLocal
         return merged
+    }
+
+    // MARK: - Image analysis
+
+    /// How much an analysis field says: `0` not analyzed (`nil`), `1`
+    /// analyzed and empty (`""` / `[]`), `2` has content. A higher rank
+    /// always replaces a lower one in a merge, never the other way round.
+    ///
+    /// "Empty" loses to "has content" because it is not always a fact about
+    /// the image: a Mac that pulled a clip before its bytes finished
+    /// downloading records the missing file as analyzed-and-empty, and must
+    /// still pick up the real result from the Mac that captured it.
+    static func analysisRank(_ text: String?) -> Int {
+        guard let text else { return 0 }
+        return text.isEmpty ? 1 : 2
+    }
+
+    static func analysisRank(_ labels: [String]?) -> Int {
+        guard let labels else { return 0 }
+        return labels.isEmpty ? 1 : 2
+    }
+
+    /// Gives `winner` the best `ocrText` and `imageLabels` any copy of it
+    /// has (see `analysisRank`), independently per field. The winner's own
+    /// value stays whenever it is as good as the best, so two Macs that both
+    /// analyzed a clip each keep their own result and the merge reports no
+    /// change - it converges instead of ping-ponging. Among equally ranked
+    /// donors the newest `updatedAt` wins, then the same origin tie-break as
+    /// the whole-record rule, so the outcome never depends on dictionary
+    /// order.
+    private static func fillImageAnalysis(
+        into winner: inout ClipboardItem,
+        from versions: [(origin: String, item: ClipboardItem)]
+    ) {
+        let ordered = versions.sorted { lhs, rhs in
+            if lhs.item.updatedAt != rhs.item.updatedAt { return lhs.item.updatedAt > rhs.item.updatedAt }
+            return lhs.origin < rhs.origin
+        }
+        if let best = ordered.max(by: { analysisRank($0.item.ocrText) < analysisRank($1.item.ocrText) }),
+           analysisRank(best.item.ocrText) > analysisRank(winner.ocrText) {
+            winner.ocrText = best.item.ocrText
+        }
+        if let best = ordered.max(by: { analysisRank($0.item.imageLabels) < analysisRank($1.item.imageLabels) }),
+           analysisRank(best.item.imageLabels) > analysisRank(winner.imageLabels) {
+            winner.imageLabels = best.item.imageLabels
+        }
     }
 
     /// Order-stable tag union: `base` keeps its order, everything new is

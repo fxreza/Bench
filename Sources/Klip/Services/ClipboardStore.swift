@@ -235,6 +235,13 @@ class ClipboardStore: ObservableObject {
         print("[Buffer] Store: New count: \(items.count)")
 
         scheduleSave()
+
+        // Last, once the clip is in the list and its save is scheduled: the
+        // queue only records the id here and starts Vision on a later turn
+        // of the run loop, so a capture never waits on analysis.
+        if item.needsImageAnalysis, items.contains(where: { $0.id == item.id }) {
+            onImageNeedsAnalysis?(item.id)
+        }
     }
 
     /// Brings the clip at `index` back to the top of the history because its
@@ -260,6 +267,12 @@ class ClipboardStore: ObservableObject {
 
         print("[Buffer] Store: Duplicate content, resurfaced existing item")
         scheduleSave()
+
+        // A clip the launch backfill has not reached yet jumps the queue once
+        // it is back on row one, where it is about to be looked at.
+        if existing.needsImageAnalysis {
+            onImageNeedsAnalysis?(existing.id)
+        }
     }
 
     /// Fills in `contentKey` for every item captured before that field
@@ -476,14 +489,119 @@ class ClipboardStore: ObservableObject {
         }
     }
 
-    /// Save extracted OCR text for an image item
+    /// Save extracted OCR text for an image item. The legacy "No text found"
+    /// sentinel is stored as `""` (see `ClipboardItem.ocrText`), so a caller
+    /// that still passes it cannot put it back into search.
     func setOCRText(_ text: String, for item: ClipboardItem) {
         runOnMain { [weak self] in
             guard let self = self else { return }
             guard let index = self.items.firstIndex(where: { $0.id == item.id }) else { return }
-            self.items[index].ocrText = text
+            self.items[index].ocrText = ClipboardItem.normalizedOCRText(text)
             self.touchItem(at: index)   // Phase 4A
             self.scheduleSave()
+        }
+    }
+
+    // MARK: - Image analysis (text + labels)
+
+    /// Stores what an image clip was found to contain, both halves in one
+    /// mutation (one list refresh, one debounced save). `ocrText` is `""`
+    /// when the image has no text; `labels` is `[]` when nothing was
+    /// recognized. Overwrites whatever the clip had, so it is also the call
+    /// for a user-requested re-read.
+    ///
+    /// Deliberately does **not** stamp `updatedAt` (`touchItem`), for the
+    /// same reason `backfillContentKeysIfNeeded` does not: analysis is
+    /// derived data, not an edit. `updatedAt` decides which Mac's copy of a
+    /// clip wins a sync merge *whole-record*, so a background read that
+    /// stamped it could beat - and silently undo - a rename, pin or folder
+    /// move made on another Mac that this one had not pulled yet. The other
+    /// Mac still gets the results: `SyncMerge` fills a missing `ocrText` /
+    /// `imageLabels` from any copy that has them, whichever copy wins.
+    /// Nothing else reads `updatedAt` except the search-blob cache, which
+    /// keys on the analysis fields too (`FilterState.searchBlob`).
+    func setImageAnalysis(ocrText: String, labels: [String], for item: ClipboardItem) {
+        runOnMain { [weak self] in
+            guard let self = self else { return }
+            guard let index = self.items.firstIndex(where: { $0.id == item.id }) else { return }
+            let text = ClipboardItem.normalizedOCRText(ocrText) ?? ""
+            var updated = self.items[index]
+            guard updated.ocrText != text || updated.imageLabels != labels else { return }
+            updated.ocrText = text
+            updated.imageLabels = labels
+            // One element write, so `items` publishes once for both fields.
+            self.items[index] = updated
+            self.scheduleSave()
+        }
+    }
+
+    /// Batch form used by `ImageAnalysisQueue`: applies many background
+    /// results in **one** mutation, so a launch backfill over hundreds of
+    /// screenshots costs one list refresh and one debounced history write
+    /// per batch instead of one per image.
+    ///
+    /// A *fill*, not an overwrite: a field that already has a value is left
+    /// alone. That keeps text the user has already seen (read by the old
+    /// manual "Extract text", or pulled from another Mac) from being
+    /// rewritten under them, while a clip that only lacked its labels still
+    /// gets them. Ids no longer in the history (deleted or evicted while
+    /// they waited) are ignored. Like `setImageAnalysis`, never stamps
+    /// `updatedAt`. Returns how many clips changed.
+    ///
+    /// `notifySync: false` saves locally without asking iCloud sync for a
+    /// push; the backfill uses it for its intermediate batches and calls
+    /// `noteBackgroundChangeForSync()` once at the end.
+    @discardableResult
+    func applyImageAnalyses(_ results: [UUID: ImageAnalysis], notifySync: Bool = true) -> Int {
+        guard !results.isEmpty else { return 0 }
+        var changed = 0
+        performOnMainSync { [weak self] in
+            guard let self = self else { return }
+            // Edited on a copy and assigned back once: `items` is
+            // `@Published`, and a write per element would publish per image.
+            var updated = self.items
+            for index in updated.indices {
+                guard let result = results[updated[index].id] else { continue }
+                var didChange = false
+                if updated[index].ocrText == nil {
+                    updated[index].ocrText = result.text
+                    didChange = true
+                }
+                if updated[index].imageLabels == nil {
+                    updated[index].imageLabels = result.labels
+                    didChange = true
+                }
+                if didChange { changed += 1 }
+            }
+            guard changed > 0 else { return }
+            self.items = updated
+            self.scheduleSave(notifySync: notifySync)
+        }
+        return changed
+    }
+
+    /// Asks iCloud sync for one push covering background changes that were
+    /// saved with `notifySync: false`.
+    func noteBackgroundChangeForSync() {
+        runOnMain { [weak self] in self?.notifySyncOfLocalMutation() }
+    }
+
+    /// Set by `ImageAnalysisQueue` while it runs. Called on the main thread
+    /// with an image clip that needs reading *now*: one that was just
+    /// captured (after it is in `items` and its save is scheduled, so the
+    /// capture itself never waits on Vision), or one the UI asked for via
+    /// `requestImageAnalysis`.
+    var onImageNeedsAnalysis: ((UUID) -> Void)?
+
+    /// UI entry point: read this image clip ahead of any backfill. A no-op
+    /// for anything that is not an image or has already been read; the
+    /// result lands on the clip through `applyImageAnalyses`.
+    func requestImageAnalysis(for item: ClipboardItem) {
+        runOnMain { [weak self] in
+            guard let self = self,
+                  let current = self.items.first(where: { $0.id == item.id }),
+                  current.needsImageAnalysis else { return }
+            self.onImageNeedsAnalysis?(current.id)
         }
     }
 
@@ -1472,9 +1590,11 @@ class ClipboardStore: ObservableObject {
     // MARK: - Saving
 
     /// Schedule a debounced write of the current items. Safe to call from the
-    /// main thread after any mutation.
-    private func scheduleSave() {
-        notifySyncOfLocalMutation()   // Phase 4A
+    /// main thread after any mutation. `notifySync: false` is for background
+    /// bookkeeping that batches its own sync notification
+    /// (`applyImageAnalyses`).
+    private func scheduleSave(notifySync: Bool = true) {
+        if notifySync { notifySyncOfLocalMutation() }   // Phase 4A
         let snapshot = items
         saveQueue.async { [weak self] in
             guard let self = self else { return }
