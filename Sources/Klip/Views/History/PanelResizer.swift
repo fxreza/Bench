@@ -173,7 +173,7 @@ enum PaneMetrics {
             ["doc.on.doc"],
             ["arrow.down.to.line"],
             ["qrcode"],
-            ["text.viewfinder", "ellipsis.circle"],
+            ["text.viewfinder"],
             ["pin", "pin.fill"],
             ["star", "star.fill"],
             ["lock.open", "lock.fill"],

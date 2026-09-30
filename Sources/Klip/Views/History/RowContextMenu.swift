@@ -9,7 +9,7 @@ import AppKit
 /// before building this view); right-clicking inside an existing
 /// multi-selection leaves it intact, so bulk actions (Move to Folder, Lock,
 /// Delete, Save to Disk) apply to the whole thing. Per-item actions (Edit,
-/// Add Tag, Reveal in Finder, Open Link) always target the row that was
+/// Add Tag, Copy Text, Reveal in Finder, Open Link) always target the row that was
 /// actually clicked (`item`).
 ///
 /// Key equivalents shown in parentheses come from `ShortcutManager`, so a
@@ -71,6 +71,21 @@ struct RowContextMenu: View {
         }
         Button(shortcutLabel(copyPlainTitle, .copyPlain)) {
             viewModel.copyFromMenu(item, mode: viewModel.alternatePasteMode)
+        }
+
+        // The words in the picture, as text. Sits with the other Copy entries
+        // because that is where someone looking for it looks, and like Copy
+        // it has no multi-selection form: it targets the row that was
+        // clicked. Only offered on an image Klip has read text out of -
+        // absent, like Edit on an image and Reveal in Finder on text, rather
+        // than greyed, because it depends on the kind of clip (and on there
+        // being text at all) the way those do, and a screenshot of a photo
+        // would otherwise carry a dead entry in every menu. No key is shown
+        // because it has none; the preview pane's icon is its other way in.
+        if ImageTextState(item).canCopy {
+            Button("Copy Text") {
+                viewModel.copyImageText(for: item)
+            }
         }
 
         Divider()

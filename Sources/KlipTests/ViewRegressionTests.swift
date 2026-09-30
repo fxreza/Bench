@@ -200,9 +200,9 @@ enum ViewRegressionTests {
 
     // MARK: - 3.0.1 user item 11: the OCR copy button
 
-    /// The copy icon beside OCR-extracted text wrote to the pasteboard with
-    /// no feedback at all, so a missed click on the bare 12 pt glyph was
-    /// indistinguishable from a failed copy. It now goes through
+    /// The copy icon beside the text read out of an image wrote to the
+    /// pasteboard with no feedback at all, so a missed click on the bare 12 pt
+    /// glyph was indistinguishable from a failed copy. It now goes through
     /// `PasteController.copyPlainText` (ignore-next-change first, then the
     /// write) and toasts on success.
     ///
@@ -216,7 +216,7 @@ enum ViewRegressionTests {
             vm.copyOCRText("  Receipt total 42.00  ", to: board)
             try expectEqual(board.string(forType: .string), "Receipt total 42.00",
                             "the OCR text lands on the pasteboard, trimmed")
-            try expectEqual(vm.toast?.text, "OCR text copied", "a successful copy confirms itself")
+            try expectEqual(vm.toast?.text, "Text copied", "a successful copy confirms itself")
 
             // Nothing to copy: no write, and no toast claiming otherwise.
             vm.toast = nil
