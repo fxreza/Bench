@@ -18,5 +18,7 @@ dist/app.noindex/
 # Agent worktrees
 .worktrees/
 
-# MobileCLIP model files (~200 MB), fetched by scripts/fetch-clip-model.sh
-Models.noindex/
+# MobileCLIP model files (~200 MB), fetched by scripts/fetch-clip-model.sh.
+# No trailing slash, so an agent worktree's symlink to the main checkout's
+# folder is ignored too.
+Models.noindex

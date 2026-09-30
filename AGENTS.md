@@ -10,6 +10,14 @@
 A code change is not done until `/Applications/Bench.app` is rebuilt; that is
 the copy the user runs.
 
+Klip's smart image search needs Apple's MobileCLIP-S2 model in
+`Models.noindex/MobileCLIP` (gitignored, ~200 MB): run
+`scripts/fetch-clip-model.sh` once. `build-app.sh` bundles it, precompiled,
+into `Contents/Resources/MobileCLIP`; without it the app still builds and
+smart search is simply off. Tests find it there or via `KLIP_CLIP_MODEL_DIR`
+(`KLIP_SKIP_CLIP_TESTS=1` skips the real-model tests). In an agent worktree,
+symlink the main checkout's `Models.noindex` rather than fetching again.
+
 ## Output directories end in `.noindex`
 
 `build.noindex/` and `dist/app.noindex/` keep Spotlight from indexing a second

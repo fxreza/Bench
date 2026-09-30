@@ -62,6 +62,35 @@ echo "Copied ${BUNDLE_COUNT} module resource bundle(s)."
 # mode but the copy above may not, and a non-executable script never starts.
 find "$APP/Contents/Resources" -name '*.pl' -exec chmod +x {} +
 
+# Klip's smart image search: Apple's MobileCLIP-S2 encoders (~190 MB, not in
+# git; scripts/fetch-clip-model.sh puts them in Models.noindex/MobileCLIP).
+# They go to Contents/Resources/MobileCLIP, precompiled to .mlmodelc (see
+# scripts/compile-clip-model.swift for why), with the tokenizer's merges file.
+# clip-vocab.json stays behind: the tokenizer derives the vocabulary from the
+# merges. Without the model the app still builds and runs; smart search just
+# reports itself unavailable and search uses text, OCR and Vision labels.
+CLIP_SRC="Models.noindex/MobileCLIP"
+CLIP_DEST="$APP/Contents/Resources/MobileCLIP"
+if [ -f "$CLIP_SRC/clip-merges.txt" ] \
+    && [ -d "$CLIP_SRC/mobileclip_s2_image.mlpackage" ] \
+    && [ -d "$CLIP_SRC/mobileclip_s2_text.mlpackage" ]; then
+    mkdir -p "$CLIP_DEST"
+    # The header plus CLIP's 48,894 merges: all the tokenizer reads
+    # (CLIPTokenizer.mergeCount); the rest of Apple's 3.2 MB file is unused.
+    head -n 48895 "$CLIP_SRC/clip-merges.txt" > "$CLIP_DEST/clip-merges.txt"
+    if swift scripts/compile-clip-model.swift "$CLIP_SRC" "$CLIP_DEST"; then
+        echo "Bundled MobileCLIP (precompiled): $(du -sh "$CLIP_DEST" | cut -f1)"
+    else
+        # Still usable: MobileCLIPEncoder compiles a package on first use.
+        echo "Warning: could not precompile MobileCLIP; bundling the .mlpackage files instead."
+        rm -rf "$CLIP_DEST"/*.mlmodelc
+        cp -R "$CLIP_SRC"/*.mlpackage "$CLIP_DEST/"
+    fi
+else
+    echo "Warning: $CLIP_SRC is missing - smart image search will be unavailable in this build."
+    echo "         Run scripts/fetch-clip-model.sh to download the model (~200 MB)."
+fi
+
 # MARK: - Sign
 
 # A stable local identity so TCC (Accessibility / Screen Recording) grants
