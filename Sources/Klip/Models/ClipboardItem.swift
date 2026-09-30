@@ -198,7 +198,7 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
     /// nothing. It was a real string in `ocrText`, so it showed up in search
     /// (typing "found" matched every text-less image the user had tried) and
     /// could not be told apart from an image that literally said it. Mapped
-    /// to `""` on decode and by `ClipboardStore.setOCRText`; never written.
+    /// to `""` on decode and by `ClipboardStore.setImageAnalysis`; never written.
     static let legacyNoTextSentinel = "No text found in this image."
 
     /// `ocrText` as stored from now on: the legacy sentinel becomes `""`.

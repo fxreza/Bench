@@ -489,19 +489,6 @@ class ClipboardStore: ObservableObject {
         }
     }
 
-    /// Save extracted OCR text for an image item. The legacy "No text found"
-    /// sentinel is stored as `""` (see `ClipboardItem.ocrText`), so a caller
-    /// that still passes it cannot put it back into search.
-    func setOCRText(_ text: String, for item: ClipboardItem) {
-        runOnMain { [weak self] in
-            guard let self = self else { return }
-            guard let index = self.items.firstIndex(where: { $0.id == item.id }) else { return }
-            self.items[index].ocrText = ClipboardItem.normalizedOCRText(text)
-            self.touchItem(at: index)   // Phase 4A
-            self.scheduleSave()
-        }
-    }
-
     // MARK: - Image analysis (text + labels)
 
     /// Stores what an image clip was found to contain, both halves in one

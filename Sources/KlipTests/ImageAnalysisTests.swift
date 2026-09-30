@@ -23,7 +23,6 @@ enum ImageAnalysisTests {
         ("needsImageAnalysis_rules", testNeedsImageAnalysis),
         // Store
         ("setImageAnalysis_setsBothFields_oneWrite_noUpdatedAtBump", testSetImageAnalysis),
-        ("setOCRText_legacySentinel_isStoredAsEmpty", testSetOCRTextSentinel),
         ("applyImageAnalyses_fillsOnlyMissing_ignoresDeleted_persists", testApplyImageAnalyses),
         ("add_newImage_callsAnalysisHookAfterInsert", testAddCallsHook),
         ("add_textClip_doesNotCallAnalysisHook", testAddTextSkipsHook),
@@ -276,17 +275,6 @@ enum ImageAnalysisTests {
 
             store.setImageAnalysis(ocrText: ClipboardItem.legacyNoTextSentinel, labels: [], for: clip)
             try expectEqual(item(clip.id, in: store)?.ocrText, "", "the sentinel is never stored")
-        }
-    }
-
-    static func testSetOCRTextSentinel() throws {
-        try ClipboardStoreTests.withStore { store, _ in
-            let clip = image()
-            store.add(clip)
-            store.setOCRText(ClipboardItem.legacyNoTextSentinel, for: clip)
-            try expectEqual(item(clip.id, in: store)?.ocrText, "", "the old UI path cannot bring the sentinel back")
-            store.setOCRText("Hello", for: clip)
-            try expectEqual(item(clip.id, in: store)?.ocrText, "Hello")
         }
     }
 
