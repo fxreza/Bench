@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Shot: the Freehand tool's icon is now a squiggle instead of a pencil. At toolbar size the pencil looked like a diagonal stroke, almost the same as the Line tool's icon next to it.
+
 ## 0.3.5 (2026-09-26)
 
 ### Fixed

@@ -40,7 +40,7 @@ nonisolated enum EditorTool: String, CaseIterable, Sendable {
         switch self {
         case .select: "cursorarrow"; case .arrow: "arrow.up.right"; case .text: "textformat"
         case .counter: "1.circle"; case .rectangle: "rectangle"; case .oval: "oval"
-        case .freehand: "pencil"; case .line: "line.diagonal"; case .crop: "crop"
+        case .freehand: "scribble"; case .line: "line.diagonal"; case .crop: "crop"
         case .blur: "drop"; case .highlighter: "highlighter"
         }
     }
