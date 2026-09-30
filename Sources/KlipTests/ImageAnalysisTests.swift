@@ -34,6 +34,8 @@ enum ImageAnalysisTests {
         ("merge_contentDedupe_carriesLabels", testMergeDedupeCarriesLabels),
         // Search
         ("search_findsImageByLabel", testSearchByLabel),
+        ("search_labelsMatchWholeWords_manIsNotMangoOrGermanShepherd", testLabelsMatchWholeWords),
+        ("search_textStillMatchesSubstrings", testTextStillMatchesSubstrings),
         ("search_pluralQuery_findsSingularLabel", testSearchPlural),
         ("pluralForms_table", testPluralFormsTable),
         ("search_plusBetweenLetters_isAnd", testSearchPlusIsAnd),
@@ -409,9 +411,46 @@ enum ImageAnalysisTests {
         let unread = image()
         let items = [flower, keyboard, unread]
         try expectEqual(search("flower", in: items).map(\.id), [flower.id])
-        try expectEqual(search("KEYBOARD", in: items).map(\.id), [keyboard.id], "substring, case-insensitive")
+        // Was "substring, case-insensitive": labels are matched whole-word
+        // now (see `FilterState.labelWords`), and "keyboard" still finds
+        // "computer keyboard" because it is one of the label's words.
+        try expectEqual(search("KEYBOARD", in: items).map(\.id), [keyboard.id], "a word of a multi-word label, case-insensitive")
         try expectEqual(search("computer keyboard", in: items).map(\.id), [keyboard.id])
         try expectEqual(search("tulip", in: items).count, 0)
+    }
+
+    /// Vision labels are matched as whole words, so a short query no longer
+    /// lands inside a longer, unrelated label.
+    static func testLabelsMatchWholeWords() throws {
+        let man = image(ocrText: "", labels: ["man"])
+        let mango = image(ocrText: "", labels: ["mango"])
+        let shepherd = image(ocrText: "", labels: ["german shepherd", "dog"])
+        let doberman = image(ocrText: "", labels: ["doberman"])
+        let stage = image(ocrText: "", labels: ["performance"])
+        let items = [man, mango, shepherd, doberman, stage]
+
+        try expectEqual(search("man", in: items).map(\.id), [man.id],
+                        "not mango, german shepherd, doberman or performance")
+        try expectEqual(search("men", in: items).map(\.id), [man.id], "the irregular plural still finds it")
+        try expectEqual(search("mangoes", in: items).map(\.id), [mango.id], "plurals of other labels too")
+        try expectEqual(search("shepherd", in: items).map(\.id), [shepherd.id], "any whole word of a label")
+        try expectEqual(search("german shepherd", in: items).map(\.id), [shepherd.id])
+        try expectEqual(search("dogs", in: items).map(\.id), [shepherd.id])
+        try expectEqual(search("mang", in: items).count, 0, "half a label word is not a match")
+        try expectEqual(FilterState.labelWords(["Golf Ball", "man"]), ["golf", "ball", "balls", "man", "men"],
+                        "folded words of each label and its plurals")
+    }
+
+    /// Real text keeps substring matching: only labels changed.
+    static func testTextStillMatchesSubstrings() throws {
+        let manual = ClipboardItem.text("Read the manual first")
+        let screenshot = image(ocrText: "MANUAL OVERRIDE", labels: ["mango"])
+        let mango = image(ocrText: "", labels: ["mango"])
+        let result = search("man", in: [manual, screenshot, mango]).map(\.id)
+        try expectEqual(result, [manual.id, screenshot.id],
+                        "'man' still finds 'manual' in clip text and in text read out of an image, but not the mango label")
+        try expectEqual(search("manual mango", in: [manual, screenshot, mango]).map(\.id), [screenshot.id],
+                        "each word may land in a different field: OCR substring and label word")
     }
 
     static func testSearchPlural() throws {
