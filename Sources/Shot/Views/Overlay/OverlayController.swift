@@ -29,6 +29,7 @@ final class OverlayController {
     private var textCompletion: ((CGImage?) -> Void)?
     private var isPresenting = false
     private var windowCaptureInFlight = false
+    private var moveMonitor: Any?
 
     /// The app that was frontmost when this capture started - recorded before
     /// any Bench panel is ordered front, because from then on the frontmost app
@@ -141,6 +142,7 @@ final class OverlayController {
 
         ShotDiag.startWatchdog()
         CaptureCursor.allowInBackground()
+        startRetargetingMoves()
         let key = panels.first { $0.frozen.screenFrame.contains(mouse) } ?? panels.first
         key?.makeKeyAndOrderFront(nil)
         if let key { key.makeFirstResponder(key.overlayView) }
@@ -158,6 +160,29 @@ final class OverlayController {
         }
 
         if mode == .screen, purpose == .capture { key?.overlayView.selectWholeScreen() }
+    }
+
+    /// Since macOS 27 mouse moves reach Bench addressed to one of its
+    /// off-screen menu bar windows. AppKit routes each move there as well as
+    /// to the overlay, and that window, with nothing under the pointer, sets
+    /// the arrow right after the overlay or the canvas set its pointer. Moves
+    /// are re-addressed to the overlay panel under the pointer instead.
+    private func startRetargetingMoves() {
+        guard moveMonitor == nil else { return }
+        moveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            guard let self, let source = event.window, !(source is OverlayPanel) else { return event }
+            let point = source.convertPoint(toScreen: event.locationInWindow)
+            guard let panel = self.panels.first(where: { $0.frame.contains(point) }) else { return event }
+            return NSEvent.mouseEvent(with: .mouseMoved,
+                                      location: panel.convertPoint(fromScreen: point),
+                                      modifierFlags: event.modifierFlags,
+                                      timestamp: event.timestamp,
+                                      windowNumber: panel.windowNumber,
+                                      context: nil,
+                                      eventNumber: event.eventNumber,
+                                      clickCount: 0,
+                                      pressure: 0) ?? event
+        }
     }
 
     // MARK: - source app
@@ -200,6 +225,8 @@ final class OverlayController {
         let closing = panels
         panels = []
         ShotDiag.stopWatchdog()
+        if let moveMonitor { NSEvent.removeMonitor(moveMonitor) }
+        moveMonitor = nil
         for panel in closing { panel.teardown() }
         OverlayTooltip.shared.hide()
         windowCaptureInFlight = false

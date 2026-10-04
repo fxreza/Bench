@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.9 (2026-10-04)
+
+### Fixed
+
+- Shot: after a capture shortcut the crosshair turned back into the arrow as soon as the mouse moved, and the drawing tool pointers (Freehand ring, Highlighter I-beam and the others) did the same inside the selection. On macOS 27 every mouse move also reaches one of Bench's hidden menu bar windows, which set the arrow right after the overlay set its pointer. While the capture overlay is open, mouse moves now go to the overlay only.
+
 ## 0.3.8 (2026-10-04)
 
 ### Fixed
