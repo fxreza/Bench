@@ -508,4 +508,21 @@ enum CaptureCursor {
         }
         return NSCursor(image: image, hotSpot: CGPoint(x: s / 2, y: s / 2))
     }()
+
+    private static var backgroundAllowed = false
+
+    /// Lets Bench set the pointer while another app is frontmost. Since macOS
+    /// 27 the window server ignores `NSCursor.set()` from an app that is not
+    /// active, and the overlay's non-activating panels never activate Bench,
+    /// so the pointer stayed the arrow. `SetsCursorInBackground` is a private
+    /// window-server connection property; it stays on for the process.
+    static func allowInBackground() {
+        guard !backgroundAllowed else { return }
+        let cid = CGSMainConnectionID()
+        backgroundAllowed = CGSSetConnectionProperty(cid, cid, "SetsCursorInBackground" as CFString, kCFBooleanTrue) == 0
+        if !backgroundAllowed { NSLog("Shot: could not allow setting the cursor in the background") }
+    }
 }
+
+@_silgen_name("CGSMainConnectionID") private func CGSMainConnectionID() -> UInt32
+@_silgen_name("CGSSetConnectionProperty") private func CGSSetConnectionProperty(_ cid: UInt32, _ target: UInt32, _ key: CFString, _ value: CFTypeRef) -> Int32

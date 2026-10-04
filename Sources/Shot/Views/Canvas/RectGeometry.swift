@@ -58,7 +58,24 @@ nonisolated enum RectGeometry {
         return r
     }
 
+    /// The double arrows macOS shows on window edges and corners (no bar in
+    /// the middle, diagonal at the corners).
     static func cursor(for handle: HandleKind?) -> NSCursor {
+        if #available(macOS 15, *) {
+            let position: NSCursor.FrameResizePosition
+            switch handle {
+            case .top?: position = .top
+            case .bottom?: position = .bottom
+            case .left?: position = .left
+            case .right?: position = .right
+            case .topLeft?: position = .topLeft
+            case .topRight?: position = .topRight
+            case .bottomLeft?: position = .bottomLeft
+            case .bottomRight?: position = .bottomRight
+            default: return .arrow
+            }
+            return .frameResize(position: position, directions: .all)
+        }
         switch handle {
         case .top?, .bottom?: return .resizeUpDown
         case .left?, .right?: return .resizeLeftRight

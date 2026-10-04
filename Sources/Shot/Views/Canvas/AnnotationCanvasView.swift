@@ -97,7 +97,7 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let t = trackingArea { removeTrackingArea(t) }
-        let t = NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        let t = NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
         addTrackingArea(t)
         trackingArea = t
     }
@@ -285,6 +285,7 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         if let hit = HitTesting.topmost(in: document.annotations, at: p, tolerance: hitTolerance) {
             selectedID = hit.id
             drag = .moving(original: hit, start: p, moved: false)
+            updateCursor(at: p)
             return
         }
 
@@ -398,16 +399,31 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
 
     override func mouseExited(with event: NSEvent) { hoveredID = nil; NSCursor.arrow.set() }
 
+    /// AppKit's own cursor updates (entering the view, the window turning
+    /// key) would otherwise put the arrow back over the canvas cursor.
+    override func cursorUpdate(with event: NSEvent) { updateCursor(at: imagePoint(event)) }
+
+    /// True when a click at `p` would reach the canvas. In the overlay the
+    /// selection handles sit on top and set the cursor where they take the
+    /// click; two views setting it on every move made it flicker.
+    private func ownsPointer(at p: CGPoint) -> Bool {
+        guard let root = window?.contentView else { return true }
+        let inWindow = convert(p, to: nil)
+        let hit = root.hitTest(root.superview?.convert(inWindow, from: nil) ?? inWindow)
+        return hit.map { $0 === self || $0.isDescendant(of: self) } ?? false
+    }
+
     private func updateCursor(at p: CGPoint) {
-        if isEditingText { return }
+        if isEditingText || !ownsPointer(at: p) { return }
         if tool == .crop, let c = cropRect {
             if let h = RectGeometry.handle(at: p, in: c, radius: handleRadius * 1.6) { RectGeometry.cursor(for: h).set() }
             else if c.contains(p) { NSCursor.openHand.set() } else { NSCursor.crosshair.set() }
             return
         }
         if let sel = selectedAnnotation, HitTesting.handle(at: p, for: sel, radius: handleRadius * 1.6) != nil { NSCursor.crosshair.set(); return }
-        if hoveredID != nil { NSCursor.openHand.set(); return }
-        ToolCursors.cursor(for: tool).set()
+        // The selected object drags (hand); any other object is picked by a click first (arrow).
+        if let id = hoveredID { (id == selectedID ? NSCursor.openHand : NSCursor.arrow).set(); return }
+        ToolCursors.cursor(for: tool, style: style, scale: viewScale).set()
     }
 
 
@@ -556,21 +572,83 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
 }
 
 
-/// Per-tool mouse cursors: arrow for select, pencil / highlighter pens drawn
-/// from SF Symbols, I-beam for text, crosshair for shapes.
+/// Per-tool mouse cursors: arrow for select, a brush-size ring for freehand,
+/// an I-beam over a highlight mark for the highlighter, I-beam for text,
+/// crosshair for shapes.
 @MainActor
 enum ToolCursors {
     private static var cache: [EditorTool: NSCursor] = [:]
+    private static var rings: [Int: NSCursor] = [:]
+    private static var highlightBeams: [HighlightBeamKey: NSCursor] = [:]
+    private struct HighlightBeamKey: Hashable { let color: AnnotationColor; let height: Int }
 
-    static func cursor(for tool: EditorTool) -> NSCursor {
+    /// `scale` is the host magnification, so the freehand ring matches the
+    /// stroke as it will appear on screen.
+    static func cursor(for tool: EditorTool, style: ToolStyle, scale: CGFloat) -> NSCursor {
         switch tool {
         case .select: return .arrow
         case .text: return .iBeam
-        case .freehand: return symbolCursor(tool, "pencil", hotSpot: CGPoint(x: 2, y: 20))
-        case .highlighter: return symbolCursor(tool, "highlighter", hotSpot: CGPoint(x: 2, y: 20))
+        case .freehand: return ring(diameter: style.thickness * scale)
+        case .highlighter: return highlightBeam(color: style.highlighterColor, height: style.highlighterThickness * scale)
         case .counter: return symbolCursor(tool, "1.circle", hotSpot: CGPoint(x: 11, y: 11))
         default: return .crosshair
         }
+    }
+
+    /// Photoshop-style brush outline: a ring as wide as the stroke with a
+    /// centre dot (a thin stroke's ring alone is hard to see), black with a
+    /// white halo so it reads on any content.
+    private static func ring(diameter: CGFloat) -> NSCursor {
+        let d = Int(min(max(diameter, 5), 128).rounded())
+        if let c = rings[d] { return c }
+        let side = CGFloat(d) + 4
+        let image = NSImage(size: CGSize(width: side, height: side), flipped: false) { _ in
+            let circle = NSBezierPath(ovalIn: CGRect(x: 2, y: 2, width: CGFloat(d), height: CGFloat(d)))
+            NSColor.white.withAlphaComponent(0.9).setStroke()
+            circle.lineWidth = 3
+            circle.stroke()
+            NSColor.black.setStroke()
+            circle.lineWidth = 1
+            circle.stroke()
+            let c = side / 2
+            NSColor.white.withAlphaComponent(0.9).setFill()
+            NSBezierPath(ovalIn: CGRect(x: c - 1.75, y: c - 1.75, width: 3.5, height: 3.5)).fill()
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: CGRect(x: c - 0.9, y: c - 0.9, width: 1.8, height: 1.8)).fill()
+            return true
+        }
+        let c = NSCursor(image: image, hotSpot: CGPoint(x: side / 2, y: side / 2))
+        rings[d] = c
+        return c
+    }
+
+    /// A text I-beam over a block of the highlighter colour as tall as the
+    /// stroke (on screen), so the pointer shows how thick the mark will be.
+    private static func highlightBeam(color: AnnotationColor, height: CGFloat) -> NSCursor {
+        // Thin settings keep a readable minimum.
+        let h = Int(min(max(height, 8), 128).rounded())
+        let key = HighlightBeamKey(color: color, height: h)
+        if let c = highlightBeams[key] { return c }
+        let size = CGSize(width: 12, height: CGFloat(h) + 6)
+        let image = NSImage(size: size, flipped: true) { _ in
+            color.withAlpha(0.6).nsColor.setFill()
+            CGRect(x: 2, y: 3, width: 8, height: CGFloat(h)).fill()
+            let top: CGFloat = 1.5, bottom = size.height - 1.5
+            let beam = NSBezierPath()
+            beam.move(to: CGPoint(x: 3, y: top)); beam.line(to: CGPoint(x: 9, y: top))
+            beam.move(to: CGPoint(x: 6, y: top)); beam.line(to: CGPoint(x: 6, y: bottom))
+            beam.move(to: CGPoint(x: 3, y: bottom)); beam.line(to: CGPoint(x: 9, y: bottom))
+            NSColor.white.withAlphaComponent(0.9).setStroke()
+            beam.lineWidth = 3
+            beam.stroke()
+            NSColor.black.setStroke()
+            beam.lineWidth = 1
+            beam.stroke()
+            return true
+        }
+        let c = NSCursor(image: image, hotSpot: CGPoint(x: 6, y: size.height / 2))
+        highlightBeams[key] = c
+        return c
     }
 
     private static func symbolCursor(_ tool: EditorTool, _ name: String, hotSpot: CGPoint) -> NSCursor {

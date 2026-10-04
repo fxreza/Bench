@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.8 (2026-10-04)
+
+### Fixed
+
+- Shot: on macOS 27 the pointer stayed an arrow after a capture shortcut instead of turning into the crosshair. macOS 27 ignores pointer changes from an app that is not frontmost, and the capture overlay never brings Bench to the front. The crosshair now shows right away, without moving the mouse.
+- Shot: the pointer flickered between the hand and the arrow over a drawn object, because two parts of the capture overlay set it on every mouse move.
+
+### Changed
+
+- Shot: over the selected object the pointer is the hand (drag to move it); over any other object it is the arrow (click to select it).
+- Shot: with the select tool, empty space inside a fresh capture shows the hand, since dragging there moves the capture area. Once the capture has an object, empty space no longer moves it and shows the arrow; the resize handles and the move button still work.
+- Shot: the resize handles of the capture area and the editor's crop box use the macOS window-edge double arrows, diagonal at the corners, instead of the crosshair at the corners.
+- Shot: the Freehand pointer is a ring as wide as the stroke with a dot in the middle, and the Highlighter pointer is an I-beam over a block of the highlighter colour as tall as the stroke. Both follow the thickness and the editor's zoom.
+
 ## 0.3.7 (2026-09-30)
 
 ### Added

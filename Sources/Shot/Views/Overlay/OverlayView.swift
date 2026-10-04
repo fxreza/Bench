@@ -586,13 +586,37 @@ final class OverlayView: NSView, AnnotationCanvasDelegate {
 
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        if state == .idle {
-            CaptureCursor.crosshair.set()
-            updateHoveredWindow(at: p)
-        } else if state == .selected {
-            NSCursor.arrow.set()
+        if state == .idle { updateHoveredWindow(at: p) }
+        updateCursor(at: p)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        updateCursor(at: convert(event.locationInWindow, from: nil))
+    }
+
+    /// Sets the cursor for wherever the pointer is now, without a mouse event.
+    func refreshCursor() {
+        guard let window, case .none = drag else { return }
+        let p = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        guard bounds.contains(p) else { return }
+        updateCursor(at: p)
+    }
+
+    /// Sets the cursor where this view takes the click: the backdrop and the
+    /// selection handles. The canvas and the chrome strips set their own, and
+    /// setting it here too on every move made the two fight (flicker).
+    private func updateCursor(at p: CGPoint) {
+        guard let hit = hitTest(convert(p, to: superview)) else { return }
+        if hit === self {
+            (state == .selected ? NSCursor.arrow : CaptureCursor.crosshair).set()
+        } else if let handles = hit as? SelectionHandlesView {
+            handles.cursor(at: p).set()
+        } else if let canvas, hit.isDescendant(of: canvas) {
+            return
+        } else if sequence(first: hit, next: { $0.superview }).contains(where: { $0 is OverlayChromeView }) {
+            return
         } else {
-            CaptureCursor.crosshair.set()
+            NSCursor.arrow.set()
         }
     }
 
@@ -1133,16 +1157,28 @@ final class SelectionHandlesView: NSView {
         (superview ?? self).convert(event.locationInWindow, from: nil)
     }
 
-    override func mouseDown(with event: NSEvent) { owner?.beginHandleDrag(at: overlayPoint(event)) }
+    override func mouseDown(with event: NSEvent) {
+        let p = overlayPoint(event)
+        if handle(at: p) == nil { NSCursor.closedHand.set() }
+        owner?.beginHandleDrag(at: p)
+    }
     override func mouseDragged(with event: NSEvent) { owner?.continueHandleDrag(at: overlayPoint(event), shift: event.modifierFlags.contains(.shift)) }
-    override func mouseUp(with event: NSEvent) { owner?.endHandleDrag() }
+    override func mouseUp(with event: NSEvent) {
+        owner?.endHandleDrag()
+        owner?.refreshCursor()
+    }
 
-    override func resetCursorRects() {
-        guard showsHandles else { return }
-        for (kind, p) in RectGeometry.handlePositions(for: CGRect(x: Self.margin, y: Self.margin, width: selection.width, height: selection.height)) {
-            let r = CGRect(x: p.x - Self.margin, y: p.y - Self.margin, width: Self.margin * 2, height: Self.margin * 2)
-            addCursorRect(r, cursor: RectGeometry.cursor(for: kind))
-        }
+    /// Resize cursor over a handle, open hand over the body: this view only
+    /// takes the click where a drag moves the selection (`hitTest`). `point`
+    /// is in the overlay view's coordinates. The overlay sets it on mouse
+    /// moves: cursor rects only run while Bench is the active app, which the
+    /// overlay never makes it.
+    func cursor(at point: CGPoint) -> NSCursor {
+        handle(at: point).map { RectGeometry.cursor(for: $0) } ?? .openHand
+    }
+
+    private func handle(at point: CGPoint) -> HandleKind? {
+        showsHandles ? RectGeometry.handle(at: point, in: selection, radius: Self.margin) : nil
     }
 }
 
@@ -1151,14 +1187,14 @@ final class SelectionHandlesView: NSView {
 extension OverlayView {
 
     /// True when a click inside the selection should move it instead of
-    /// reaching the canvas (select tool, nothing under the pointer).
+    /// reaching the canvas (select tool, nothing drawn yet). Once the capture
+    /// has an object the body stays put: a click there only deselects, so a
+    /// slip can no longer drag the frame away.
     func wantsBodyDrag(at point: CGPoint) -> Bool {
         guard selectionIsEditableForBody, let sel = selection, sel.contains(point) else { return false }
         guard let canvas else { return true }
         if canvas.isEditingText { return false }
-        guard canvas.tool == .select else { return false }
-        let local = CGPoint(x: point.x - sel.minX, y: point.y - sel.minY)
-        return HitTesting.topmost(in: canvas.document.annotations, at: local, tolerance: 6) == nil
+        return canvas.tool == .select && canvas.document.annotations.isEmpty
     }
 
     private var selectionIsEditableForBody: Bool {

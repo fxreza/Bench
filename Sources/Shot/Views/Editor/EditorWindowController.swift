@@ -196,6 +196,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate,
     private func present() {
         window?.layoutIfNeeded()
         container.applyInitialZoom()
+        // `activate()` only asks; if macOS declines, the canvas cursors still have to show.
+        CaptureCursor.allowInBackground()
         NSApp.activate()
         showWindow(nil)
         window?.makeFirstResponder(canvas)

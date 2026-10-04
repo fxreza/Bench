@@ -140,10 +140,22 @@ final class OverlayController {
         }
 
         ShotDiag.startWatchdog()
+        CaptureCursor.allowInBackground()
         let key = panels.first { $0.frozen.screenFrame.contains(mouse) } ?? panels.first
         key?.makeKeyAndOrderFront(nil)
         if let key { key.makeFirstResponder(key.overlayView) }
         CaptureCursor.crosshair.set()
+        // The window server keeps the arrow until it has taken the new panels
+        // in, which takes 50-120 ms; until then nothing set sticks and the
+        // crosshair only came with the first mouse move. Set it again a few
+        // times over that window, for whatever is under the pointer by then.
+        for delay in [0.03, 0.08, 0.15, 0.25, 0.4] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.isActive else { return }
+                let mouse = NSEvent.mouseLocation
+                self.panels.first { $0.frame.contains(mouse) }?.overlayView.refreshCursor()
+            }
+        }
 
         if mode == .screen, purpose == .capture { key?.overlayView.selectWholeScreen() }
     }
