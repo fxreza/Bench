@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 (2026-10-05)
+
+### Added
+
+- Every release now has two downloads: `Bench-<version>-Apple-Silicon.zip`, signed for the developer's own Macs, and `Bench-<version>-arm64-adhoc.zip`, for every other Mac. Updates pick the one signed like the installed copy, so Bench installed from the ad-hoc zip on another Mac now updates itself instead of refusing with "signed by Transi Dev, but this copy of Bench is signed by no signing authority". A copy on another Mac that is older than 0.4.1 has to be replaced by hand once, with the ad-hoc zip.
+
 ## 0.4.0 (2026-10-05)
 
 ### Added

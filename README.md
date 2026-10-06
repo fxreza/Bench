@@ -122,6 +122,15 @@ grants you just made. Create the certificate once in Keychain Access
 (Certificate Assistant > Create a Certificate, type "Code Signing", self
 signed) and every rebuild keeps its permissions.
 
+Releases carry two zips, built and published by `scripts/release.sh`:
+`Bench-<version>-Apple-Silicon.zip` (signed `Transi Dev`, for the developer's
+own Macs) and `Bench-<version>-arm64-adhoc.zip` (ad-hoc, for every other Mac).
+The updater picks the zip signed like the installed copy. On another Mac,
+download the ad-hoc zip, allow it once under System Settings > Privacy &
+Security > Open Anyway, and expect to switch Accessibility and Screen
+Recording off and on again after each update: an ad-hoc signature changes
+with every build, so macOS sees each update as a new app.
+
 `BENCH_DIST=1 ./scripts/build-app.sh` signs ad-hoc instead, for a copy meant
 for another Mac: a self-signed identity's chain cannot be built there, so the
 signature would read as invalid and TCC would refuse to register the app at

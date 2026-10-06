@@ -5,6 +5,7 @@
 ```bash
 ./scripts/build-app.sh     # swift build -c release, bundle, sign, install to /Applications/Bench.app
 ./scripts/run_tests.sh     # debug build + every <Module>Tests runner
+./scripts/release.sh       # both release zips (Transi Dev + ad-hoc) and the GitHub release - see CLAUDE.md
 ```
 
 A code change is not done until `/Applications/Bench.app` is rebuilt; that is

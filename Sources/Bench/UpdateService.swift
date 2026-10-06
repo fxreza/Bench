@@ -65,7 +65,12 @@ final class UpdateService {
             if let http = response as? HTTPURLResponse {
                 NSLog("[UpdateService] GitHub API responded: HTTP \(http.statusCode)")
             }
-            let candidate = Self.selectRelease(from: data, includePrereleases: includePrereleases)
+            // An ad-hoc copy (another Mac, or a download from GitHub) can only
+            // take the ad-hoc zip, and a Transi Dev copy only the Transi Dev
+            // one: the install refuses a different signer.
+            let wantsAdHoc = Self.signingInfo(at: Bundle.main.bundlePath)?.authorities.isEmpty ?? false
+            let candidate = Self.selectRelease(
+                from: data, includePrereleases: includePrereleases, wantsAdHoc: wantsAdHoc)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     Self.shared.handle(candidate, currentVersion: currentVersion, silent: silent)
@@ -84,9 +89,18 @@ final class UpdateService {
         var notes: String?
     }
 
+    /// Whether a release asset is the ad-hoc signed zip, for Macs other than
+    /// the developer's. Its name never contains the arch keyword, so copies
+    /// older than 0.4.1, which pick the first zip naming their arch, keep
+    /// finding the Transi Dev zip.
+    nonisolated static func isAdHocAsset(_ name: String) -> Bool {
+        name.lowercased().contains("adhoc")
+    }
+
     /// Picks the release to offer out of the GitHub response. Pure parsing, no
-    /// UI: runs on the URLSession queue.
-    nonisolated static func selectRelease(from data: Data?, includePrereleases: Bool) -> ReleaseCandidate? {
+    /// UI: runs on the URLSession queue. `wantsAdHoc` picks between the two
+    /// zips a release carries; a release without the matching one is skipped.
+    nonisolated static func selectRelease(from data: Data?, includePrereleases: Bool, wantsAdHoc: Bool) -> ReleaseCandidate? {
         guard let data,
               let releases = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             NSLog("[UpdateService] Failed to parse releases JSON")
@@ -105,14 +119,14 @@ final class UpdateService {
         for release in sorted {
             guard let tag = release["tag_name"] as? String,
                   let assets = release["assets"] as? [[String: Any]] else { continue }
-            let archZip = assets.first {
+            let zips = assets.filter {
                 guard let name = $0["name"] as? String else { return false }
-                return name.hasSuffix(".zip") && name.contains(archKeyword)
+                return name.hasSuffix(".zip") && isAdHocAsset(name) == wantsAdHoc
             }
-            let anyZip = assets.first { ($0["name"] as? String)?.hasSuffix(".zip") == true }
-            guard let zip = archZip ?? anyZip,
+            let archZip = zips.first { ($0["name"] as? String)?.contains(archKeyword) == true }
+            guard let zip = archZip ?? zips.first,
                   let url = zip["browser_download_url"] as? String else { continue }
-            NSLog("[UpdateService] Selected asset: \(zip["name"] as? String ?? "?") (\(archKeyword) preferred)")
+            NSLog("[UpdateService] Selected asset: \(zip["name"] as? String ?? "?") (\(wantsAdHoc ? "ad-hoc" : "signed"), \(archKeyword) preferred)")
             return ReleaseCandidate(
                 tag: tag,
                 zipURL: url,
