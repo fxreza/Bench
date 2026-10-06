@@ -6,6 +6,7 @@ import Shot
 import Snap
 import Piko
 import Tap
+import Clean
 import notify
 
 /// A feature that can open an image file handed to the app by Finder or
@@ -38,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        FeatureRegistry.shared.register([ShotFeature(), KlipFeature(), LingoFeature(), SnapFeature(), PikoFeature(), TapFeature()])
+        FeatureRegistry.shared.register([ShotFeature(), KlipFeature(), LingoFeature(), SnapFeature(), PikoFeature(), TapFeature(), CleanFeature()])
         AppearanceSettings.shared.apply()
         installEditMenu()
         installSettingsKeyMonitor()

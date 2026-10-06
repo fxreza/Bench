@@ -45,7 +45,7 @@ public protocol SettingsSyncContributor: AnyObject {
 /// small state file next to the app's data so it survives relaunches.
 ///
 /// What syncs: every key under a module prefix (`bench.`, `shot.`, `klip.`,
-/// `lingo.`, `snap.`, `piko.`, `tap.`) except the handful that describe this
+/// `lingo.`, `snap.`, `piko.`, `tap.`, `clean.`) except the handful that describe this
 /// Mac rather than the user's choices (`excludedKeys`), plus whatever the
 /// registered contributors offer. Modules observe
 /// `.benchSettingsSyncApplied` and re-read their keys when a remote value
@@ -70,7 +70,7 @@ public final class SettingsSync: ObservableObject {
     }
 
     /// Every defaults key under one of these travels, unless excluded below.
-    public static let syncedPrefixes = ["bench.", "shot.", "klip.", "lingo.", "snap.", "piko.", "tap."]
+    public static let syncedPrefixes = ["bench.", "shot.", "klip.", "lingo.", "snap.", "piko.", "tap.", "clean."]
 
     /// Keys that describe this Mac, not the user's choices: identities,
     /// timestamps, one-time import and migration flags, update bookkeeping.

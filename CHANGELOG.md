@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 (2026-10-05)
+
+### Added
+
+- Clean, a new module for cleaning the keyboard, after KeyboardCleanTool. Start Cleaning Mode, the first item in Bench's menu (also in Settings > Clean), blocks every key (media, function and modifier keys too) and the trackpad and mouse (clicks, movement, scrolling and gestures), darkens every screen and keeps the display awake and the screensaver off. Press and hold any trackpad or mouse button to unlock; a ring in the hold-to-unlock square fills while you hold. Settings: how dark the screens go (90 % by default), how long to hold (3 s by default), and whether the square shows for the whole lock or only while you hold. Locking the screen or sleeping ends cleaning mode, and quitting Bench always unlocks. Needs Accessibility.
+
 ## 0.3.9 (2026-10-04)
 
 ### Fixed

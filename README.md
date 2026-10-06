@@ -81,6 +81,14 @@ Every shortcut above is a default. Settings > Shortcuts lists all of them
 together and lets you rebind or clear any one; a combination another action
 already holds is refused, and one macOS itself owns is reported on the row.
 
+### Clean - keyboard cleaning mode
+
+Start Cleaning Mode, the first item in Bench's menu, locks every key, the
+trackpad and the mouse so you can wipe them without triggering anything. The
+screens go dark (90 % by default) and the display stays awake. Press and hold
+any trackpad or mouse button for 3 seconds to unlock; there is deliberately no
+key to unlock, and quitting Bench always unlocks. No shortcut.
+
 ## Requirements
 
 macOS 14 or later, Apple silicon or Intel. No Xcode needed to build - the
@@ -123,7 +131,7 @@ all.
 
 | Permission | What needs it |
 |---|---|
-| Accessibility | Klip's paste-into-the-app-you-were-in, Lingo's selected-text capture, Snap's window moves |
+| Accessibility | Klip's paste-into-the-app-you-were-in, Lingo's selected-text capture, Snap's window moves, Clean's input lock |
 | Screen Recording | Shot's captures, Lingo's screenshot translate |
 | Automation | Reading the selection out of a browser, and Snap's scripted shortcuts. Granted one target app at a time, the first time Bench scripts it |
 

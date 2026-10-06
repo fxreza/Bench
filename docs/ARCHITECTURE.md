@@ -1,6 +1,6 @@
 # Bench architecture
 
-Bench is one menu-bar app made of six modules, four of which used to be
+Bench is one menu-bar app made of seven modules, four of which used to be
 separate apps:
 
 | Module | Came from | Does |
@@ -11,6 +11,7 @@ separate apps:
 | Snap  | new (replaces BetterTouchTool triggers) | window layout, previous window, titlebar double-click, two scripts |
 | Piko  | Piko (github.com/fxreza/Piko) | Dynamic Island for the notch: volume/brightness HUD, now playing, Bluetooth, battery |
 | Tap   | new (replaces a BetterTouchTool trigger) | three-finger trackpad click or tap as a middle click |
+| Clean | new (replaces KeyboardCleanTool) | locks keyboard, trackpad and mouse for cleaning, darkens the screens |
 
 Pure SwiftPM, macOS 14+, Swift 5 language mode. No Xcode on this Mac.
 
@@ -20,12 +21,12 @@ Pure SwiftPM, macOS 14+, Swift 5 language mode. No Xcode on this Mac.
 Sources/
   BenchCore/      shared plumbing, the only module every other target imports
   BenchTestKit/   expect(), runSuites() - the no-XCTest test framework
-  Shot/ Klip/ Lingo/ Snap/ Piko/ Tap/   one feature module each (library targets)
+  Shot/ Klip/ Lingo/ Snap/ Piko/ Tap/ Clean/   one feature module each (library targets)
   Bench/          the app: entry point, status bar, Settings window, updater
   <Module>Tests/  one executable test runner per module (scripts/run_tests.sh)
 ```
 
-Shot, Klip, Snap, Tap, Bench and the test runners compile with
+Shot, Klip, Snap, Tap, Clean, Bench and the test runners compile with
 `-default-isolation MainActor`; Lingo, Piko and BenchCore do not (they carry
 explicit `@MainActor`). See `Package.swift`.
 
@@ -46,6 +47,7 @@ public protocol BenchFeature: AnyObject {
     func start()                        // enabled at launch, or switched on
     func stop()                         // switched off, or quitting
     func menuItems() -> [NSMenuItem]    // status bar section, rebuilt per open
+    func pinnedMenuItems() -> [NSMenuItem]  // top of the menu, no header (default: none)
     func makeSettingsView() -> AnyView  // the module's Settings pane
 }
 ```

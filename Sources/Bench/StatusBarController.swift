@@ -94,6 +94,14 @@ final class StatusBarController {
     private func showMenu() {
         let menu = NSMenu()
 
+        // Pinned items first, with no header: actions a module wants in
+        // plain sight (Clean's Start Cleaning Mode).
+        let pinned = FeatureRegistry.shared.enabledFeatures.flatMap { $0.pinnedMenuItems() }
+        if !pinned.isEmpty {
+            pinned.forEach { menu.addItem($0) }
+            menu.addItem(.separator())
+        }
+
         // One section per enabled module, in registration order. A module
         // that offers nothing right now (or is not ported yet) contributes no
         // header either, rather than an empty heading over a separator.

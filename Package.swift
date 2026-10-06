@@ -39,6 +39,8 @@ let package = Package(
         // Tap loads MultitouchSupport.framework with dlopen at runtime, so it
         // links nothing private and ships no resources.
         .target(name: "Tap", dependencies: ["BenchCore"], swiftSettings: mainActorDefault),
+        // Clean links IOKit for the display-sleep assertion it holds while locked.
+        .target(name: "Clean", dependencies: ["BenchCore"], swiftSettings: mainActorDefault, linkerSettings: [.linkedFramework("IOKit")]),
         // Piko ships the mediaremote-adapter perl script and framework as
         // verbatim resources, hence `.copy`; reach them through
         // `Bundle.module.url(forResource:withExtension:subdirectory:)`.
@@ -56,7 +58,7 @@ let package = Package(
         // The app.
         .executableTarget(
             name: "Bench",
-            dependencies: ["BenchCore", "Shot", "Klip", "Lingo", "Snap", "Piko", "Tap"],
+            dependencies: ["BenchCore", "Shot", "Klip", "Lingo", "Snap", "Piko", "Tap", "Clean"],
             resources: [.process("Resources")],
             swiftSettings: mainActorDefault),
 
@@ -69,5 +71,6 @@ let package = Package(
         .executableTarget(name: "SnapTests", dependencies: ["Snap", "BenchTestKit"], swiftSettings: mainActorDefault),
         .executableTarget(name: "TapTests", dependencies: ["Tap", "BenchTestKit"], swiftSettings: mainActorDefault),
         .executableTarget(name: "PikoTests", dependencies: ["Piko", "BenchTestKit"], swiftSettings: mainActorDefault),
+        .executableTarget(name: "CleanTests", dependencies: ["Clean", "BenchTestKit"], swiftSettings: mainActorDefault),
     ]
 )

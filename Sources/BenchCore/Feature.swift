@@ -53,9 +53,18 @@ public protocol BenchFeature: AnyObject {
     /// array for no section.
     func menuItems() -> [NSMenuItem]
 
+    /// Items for the very top of the status bar menu, above every module
+    /// section and without a header, for an action that must never be hard
+    /// to find. Called on every menu open. Defaults to none.
+    func pinnedMenuItems() -> [NSMenuItem]
+
     /// The module's pane in the Settings window. Bench wraps it in the
     /// sidebar and adds the enable toggle above it.
     func makeSettingsView() -> AnyView
+}
+
+public extension BenchFeature {
+    func pinnedMenuItems() -> [NSMenuItem] { [] }
 }
 
 /// Owns the features, their enabled flags, and the start/stop lifecycle.
