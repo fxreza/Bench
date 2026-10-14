@@ -4,6 +4,7 @@ import BenchTestKit
 
 let suites: [TestSuite] = [
     ("KeyBindingTests", KeyBindingTests.tests),
+    ("HotkeyStalenessTests", HotkeyStalenessTests.tests),
     ("ShortcutStoreTests", ShortcutStoreTests.tests),
     ("SystemHotkeysTests", SystemHotkeysTests.tests),
     ("RecorderOutcomeTests", RecorderOutcomeTests.tests),

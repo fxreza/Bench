@@ -90,7 +90,7 @@ struct ClipRow: View {
             if item.type == .image && thumbnail == nil {
                 thumbnail = await ImageThumbnailCache.thumbnail(for: item, store: store, size: badgeSize)
             }
-            if item.type == .file && fileThumbnail == nil, let url = store.fileURLs(for: item).first {
+            if item.type == .file && fileThumbnail == nil, let url = store.localFileURLs(for: item).first {
                 fileThumbnail = await FilePreview.thumbnail(for: url, itemID: item.id, size: badgeSize)
             }
         }

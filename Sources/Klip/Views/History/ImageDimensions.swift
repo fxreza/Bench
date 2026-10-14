@@ -116,10 +116,14 @@ final class PreviewPayload {
     let image: NSImage?
     let dimensions: PixelDimensions?
     let byteSize: Int?
+    /// Words and characters of a text clip held inline. Nil for every other
+    /// clip, including file-backed text (see `HistoryViewModel.textStats`).
+    let textStats: TextStats?
 
-    init(image: NSImage?, dimensions: PixelDimensions?, byteSize: Int?) {
+    init(image: NSImage?, dimensions: PixelDimensions?, byteSize: Int?, textStats: TextStats? = nil) {
         self.image = image
         self.dimensions = dimensions
         self.byteSize = byteSize
+        self.textStats = textStats
     }
 }

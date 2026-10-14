@@ -26,14 +26,14 @@ extension ClipboardItem {
     }
 
     /// Icon for a `.file` item. Prefers Launch Services' icon for the actual
-    /// file when the payload is reachable on disk; if it went missing (moved
-    /// or deleted) this falls back to the generic icon for its extension/UTI,
-    /// so a missing "Report.pdf" still reads as a pdf rather than a blank
-    /// `doc`. `nil` only when there is no file information at all.
+    /// file when the payload is on a local disk; on a network share (never
+    /// touched while drawing) or if it went missing (moved or deleted) this
+    /// falls back to the generic icon for its extension/UTI, so a missing
+    /// "Report.pdf" still reads as a pdf rather than a blank `doc`. `nil` only when there is no file information at all.
     func fileIcon(store: ClipboardStore) -> NSImage? {
         guard type == .file || isFile else { return nil }
 
-        if let url = store.fileURLs(for: self).first, FileManager.default.fileExists(atPath: url.path) {
+        if let url = store.localFileURLs(for: self).first, FileManager.default.fileExists(atPath: url.path) {
             return NSWorkspace.shared.icon(forFile: url.path)
         }
 

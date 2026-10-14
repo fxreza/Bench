@@ -133,3 +133,18 @@ enum RecorderOutcomeTests {
         }),
     ]
 }
+
+enum HotkeyStalenessTests {
+    static let tests: [TestCase] = [
+        // Measured 2026-10-07: a shortcut pressed during a 4 s main-thread
+        // block was handled 2.6 s after its key went down; a fresh one 0.001 s.
+        ("a fresh press fires", {
+            try expect(!HotkeyCenter.isStale(secondsSinceKeyDown: 0.001), "a key that just went down is not stale")
+            try expect(!HotkeyCenter.isStale(secondsSinceKeyDown: 0.5), "half a second of main-thread work still fires")
+        }),
+        ("a press queued during a freeze is dropped", {
+            try expect(HotkeyCenter.isStale(secondsSinceKeyDown: 2.6), "a shortcut handled 2.6 s after its key went down is stale")
+            try expect(HotkeyCenter.isStale(secondsSinceKeyDown: 60), "a shortcut from a minute-long freeze is stale")
+        }),
+    ]
+}

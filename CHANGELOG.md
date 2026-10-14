@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 (2026-10-14)
+
+### Added
+
+- Klip: text clips now show their word and character count on the Size line of the preview pane's details: "1.2 KB · 214 words · 1,187 characters". Characters count spaces and line breaks, and an emoji or accented letter counts once. A very large text clip is counted in the background and shows its numbers a moment after it is selected.
+
+### Changed
+
+- Klip: the preview pane's details are easier to read. Each value now sits right after its label (labels right-aligned in one column, as in Finder's Get Info) instead of at the far edge of the pane. Size and Dimensions are one line ("2.4 MB · 1920 × 1080 px" for an image), so the list is five rows: Kind, Size, Folder, From, Copied.
+
+### Fixed
+
+- Klip: a file clip from a network share that was not connected (for example a folder on another Mac that was asleep) froze Bench for about a minute each time its row was drawn. Bench tried to reconnect the share and waited for it. While frozen, the menu bar icon did nothing and shortcuts did not respond, then all of them fired at once. Klip now never connects a share by itself and never touches a network share while drawing the list: a clip on a share that is not connected shows as missing, one on a connected share shows a generic icon and an "On a network share" badge. Paste, copy, save, Quick Look, Open and Reveal in Finder look the file up when used and give up after 1.5 s if the share does not answer (then skip that share for 30 s).
+- Shortcuts pressed while Bench is busy no longer all fire together afterwards. A shortcut handled more than a second after its key went down is dropped.
+
 ## 0.4.1 (2026-10-05)
 
 ### Added

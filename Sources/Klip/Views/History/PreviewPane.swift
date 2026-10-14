@@ -516,6 +516,11 @@ struct PreviewPane: View {
     /// kind, a "Reference" badge for files that were only referenced (not
     /// copied in), a "File not found" badge, and Reveal in Finder / Open.
     ///
+    /// A clip on a network share is never touched while drawing (a share
+    /// that stopped answering would freeze Bench): no thumbnail, an "On a
+    /// network share" badge, and Open / Reveal look the file up only when
+    /// clicked.
+    ///
     /// 3.0.1: the live `QLPreviewView` that used to sit at the top is gone.
     /// Setting its preview item from `updateNSView` — i.e. from inside a
     /// SwiftUI layout pass — hits a QuickLook assertion that aborts the
@@ -524,8 +529,9 @@ struct PreviewPane: View {
     @ViewBuilder
     private func fileBody(_ item: ClipboardItem) -> some View {
         let attachment = item.fileAttachment
-        let fileURL = store.fileURLs(for: item).first
-        let isMissing = store.fileIsMissing(item)
+        let onNetworkShare = store.fileLocation(for: item).isNetwork
+        let fileURL = store.localFileURLs(for: item).first
+        let isMissing = !onNetworkShare && store.fileIsMissing(item)
 
         VStack(alignment: .leading, spacing: 10) {
             if let fileURL, !isMissing {
@@ -537,6 +543,15 @@ struct PreviewPane: View {
             HStack(spacing: 8) {
                 if attachment?.isReference == true {
                     Text("Reference — original file")
+                        .font(.klip(.badge))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Theme.chipInactive))
+                }
+                if onNetworkShare {
+                    Text("On a network share")
                         .font(.klip(.badge))
                         .fontWeight(.semibold)
                         .foregroundStyle(.secondary)
@@ -573,10 +588,36 @@ struct PreviewPane: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                 }
+
+                if onNetworkShare {
+                    Button(action: { withNetworkFile(item) { NSWorkspace.shared.open($0) } }) {
+                        Label("Open", systemImage: "arrow.up.forward.app")
+                            .font(.klip(.caption))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+
+                    Button(action: { withNetworkFile(item) { NSWorkspace.shared.activateFileViewerSelecting([$0]) } }) {
+                        Label("Reveal in Finder", systemImage: "folder")
+                            .font(.klip(.caption))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
+    }
+
+    /// Looks a network-share clip's file up (with `fileURLs(for:)`'s
+    /// deadline) and runs `action` on it, or says why nothing happened.
+    private func withNetworkFile(_ item: ClipboardItem, _ action: (URL) -> Void) {
+        if let url = store.fileURLs(for: item).first {
+            action(url)
+        } else {
+            viewModel.showToast("The file is missing or its network share is not answering")
+        }
     }
 
     /// Name / size / kind block. The big icon is only drawn when there is no
@@ -670,7 +711,11 @@ struct PreviewPane: View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
 
-            VStack(alignment: .leading, spacing: 5) {
+            // Finder's Get Info layout: labels right-aligned in a column as
+            // wide as the longest one, values starting just after it. The
+            // value used to sit at the pane's far edge, and on a wide pane
+            // the eye lost its line crossing the gap to it.
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 5) {
                 // Ordered by how specific each fact is to the clip itself,
                 // most first: what it is, how big, where it lives, then where
                 // it came from and when. The two that are the same on whole
@@ -681,7 +726,7 @@ struct PreviewPane: View {
                 // Every row is always drawn, with an em dash where a clip has
                 // no value for it, so the list is read by position: Kind is
                 // always the first line and Copied always the last, whatever
-                // is selected. See the notes on Kind and Dimensions below.
+                // is selected. See the notes on Kind and Size below.
 
                 // What the thing actually is: "PNG image", "Word document",
                 // "Excel spreadsheet". Labelled **Kind** because that is the
@@ -691,20 +736,24 @@ struct PreviewPane: View {
                 // `ContentKind`, which is the broader Text / Image / File
                 // classification shown in the header.)
                 metaRow("Kind", value: formatLabel(for: item) ?? "—")
-                metaRow("Size", value: viewModel.preview(for: item).byteSize.map { viewModel.formattedByteCount($0) } ?? "—")
-                // Under Size because the two answer the same question ("how
-                // big is this?") from different angles.
+                // Every "how big is this?" answer on one line, only the ones
+                // that fit the clip: bytes, then pixels for an image, words
+                // and characters for text. They were four rows of their own,
+                // most of them a dash on any given clip (0.5.0).
                 //
-                // The value is a dash rather than the row waiting for it:
-                // dimensions are measured off the file header, and a row
-                // conditional on the value arrived a beat after the image did
-                // — a second reflow, right behind the one the image itself
-                // caused.
-                metaRow("Dimensions", value: viewModel.preview(for: item).dimensions?.displayString ?? "—")
+                // Dimensions and a large text's counts arrive a moment after
+                // the clip does; they join this line rather than each having
+                // a row that waited for its value and reflowed the list.
+                metaRow("Size", value: Self.sizeSummary(
+                    byteCount: viewModel.preview(for: item).byteSize.map { viewModel.formattedByteCount($0) },
+                    dimensions: viewModel.preview(for: item).dimensions,
+                    textStats: viewModel.textStats(for: item)
+                ), lineLimit: 2)
                 metaRow("Folder", value: folderName(for: item))
                 metaRow("From", value: item.sourceApp ?? "—")
                 metaRow("Copied", value: item.timestamp.formatted(date: .abbreviated, time: .shortened))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
 
             if Features.tagsEnabled {
@@ -718,12 +767,12 @@ struct PreviewPane: View {
         }
         .padding(.bottom, 12)
         // The pane as a whole animates on selection (see `body`), and that is
-        // right for the content above — but not here. Every value in this
-        // list is right-aligned, so animating a change slides each one
-        // sideways from its old position to its new one, and switching clips
-        // read as the footer wobbling rather than updating. Values that fill
-        // in a moment later (size, dimensions) did it a second time. The
-        // footer swaps instantly instead.
+        // right for the content above — but not here. Animating a change
+        // slides each value from its old position and width to its new one,
+        // and switching clips read as the footer wobbling rather than
+        // updating. Values that fill in a moment later (dimensions, a large
+        // text's counts) did it a second time. The footer swaps instantly
+        // instead.
         .transaction { $0.animation = nil }
     }
 
@@ -743,15 +792,29 @@ struct PreviewPane: View {
         return store.folders.first(where: { $0.id == id })?.name ?? "—"
     }
 
-    private func metaRow(_ label: String, value: String) -> some View {
-        HStack {
+    /// The **Size** row's value: "1.2 KB · 214 words · 1,187 characters",
+    /// "2.4 MB · 1920 × 1080 px", or a dash when nothing is known.
+    static func sizeSummary(byteCount: String?, dimensions: PixelDimensions?, textStats: TextStats?) -> String {
+        var parts: [String] = []
+        if let byteCount { parts.append(byteCount) }
+        if let dimensions { parts.append(dimensions.displayString) }
+        if let textStats {
+            parts.append("\(TextStats.formatted(textStats.words)) \(textStats.words == 1 ? "word" : "words")")
+            parts.append("\(TextStats.formatted(textStats.characters)) \(textStats.characters == 1 ? "character" : "characters")")
+        }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    private func metaRow(_ label: String, value: String, lineLimit: Int = 1) -> some View {
+        GridRow {
             Text(label)
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 8)
+                .gridColumnAlignment(.trailing)
             Text(value)
                 .fontWeight(.medium)
-                .lineLimit(1)
+                .lineLimit(lineLimit)
                 .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.klip(.caption))
     }

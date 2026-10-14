@@ -6,6 +6,7 @@
 
 import AppKit
 import Carbon.HIToolbox
+import os
 
 /// Registers Bench's global keyboard shortcuts with the Carbon Event Manager
 /// (`RegisterEventHotKey`): no Input Monitoring permission, works from an
@@ -186,6 +187,26 @@ public final class HotkeyCenter: ObservableObject {
 
     private func fire(carbonID: UInt32) {
         guard let id = idsByCarbonID[carbonID], let entry = entries[id] else { return }
+        let sinceKeyDown = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
+        guard !Self.isStale(secondsSinceKeyDown: sinceKeyDown) else {
+            Self.log.notice("dropped stale shortcut \(id, privacy: .public): key went down \(sinceKeyDown, format: .fixed(precision: 1))s ago")
+            return
+        }
         entry.handler()
     }
+
+    /// A shortcut is handled on the main thread, so one pressed while the
+    /// main thread is blocked waits in the queue and fires late, together
+    /// with every other one pressed meanwhile (2026-10-07: a two-minute
+    /// freeze ended with a dozen Finder windows at once). Carbon stamps the
+    /// event when it is handled, not when the key went down, so the age
+    /// comes from the window server's last key-down instead; a fresh press
+    /// is milliseconds old. Needs no permission.
+    static let staleShortcutAge: TimeInterval = 1.0
+
+    static func isStale(secondsSinceKeyDown: TimeInterval) -> Bool {
+        secondsSinceKeyDown > staleShortcutAge
+    }
+
+    private static let log = Logger(subsystem: "com.fxreza.bench", category: "hotkeys")
 }

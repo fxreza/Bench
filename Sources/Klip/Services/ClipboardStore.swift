@@ -1205,8 +1205,10 @@ class ClipboardStore: ObservableObject {
 
     // MARK: - Rich text / flavors (Phase 3D) — end
 
-    /// Load full text content from file (lazy loading for large text)
-    func fullText(for item: ClipboardItem) -> String? {
+    /// Load full text content from file (lazy loading for large text).
+    /// `nonisolated` so the preview's word count can read a large file off
+    /// the main thread, like `textChunk`.
+    nonisolated func fullText(for item: ClipboardItem) -> String? {
         guard let filename = item.textFilename else { return item.textContent }
         let url = textsDirectory.appendingPathComponent(filename)
 
@@ -1308,6 +1310,12 @@ class ClipboardStore: ObservableObject {
     /// plain `referencePath`. Anything that no longer exists on disk is
     /// silently skipped rather than returned as a dangling URL — callers that
     /// care whether something was dropped should check `fileIsMissing(_:)`.
+    ///
+    /// A reference on a volume that is not mounted resolves to nothing
+    /// without touching anything; one on a network share is looked up with a
+    /// deadline (`NetworkShareProbe`) and resolves to nothing when the share
+    /// does not answer. This is for actions (paste, copy, save, Quick Look,
+    /// reveal); views use `localFileURLs(for:)`.
     func fileURLs(for item: ClipboardItem) -> [URL] {
         guard let attachment = item.fileAttachment else { return [] }
 
@@ -1320,15 +1328,50 @@ class ClipboardStore: ObservableObject {
             }
         }
 
-        if let bookmark = attachment.bookmark {
+        let bookmark = attachment.bookmark
+        let path = attachment.referencePath
+        switch fileLocation(for: item) {
+        case .unmounted:
+            return []
+        case .local:
+            return Self.resolveReference(bookmark: bookmark, path: path)
+        case .network(let mountPoint):
+            return NetworkShareProbe.run(mountPoint: mountPoint) {
+                Self.resolveReference(bookmark: bookmark, path: path)
+            } ?? []
+        }
+    }
+
+    /// `fileURLs(for:)` for drawing rows, icons, thumbnails and the preview
+    /// pane: the same on a local disk, but empty for a clip on a network
+    /// share, which is never touched here. Drawing the list must not wait on
+    /// a share, and views do not know whether a clip is on one.
+    func localFileURLs(for item: ClipboardItem) -> [URL] {
+        if fileLocation(for: item).isNetwork { return [] }
+        return fileURLs(for: item)
+    }
+
+    /// Where a reference clip's original lives, from the mount table alone
+    /// (see `VolumeLocation`). Copied-in clips are always `.local`.
+    func fileLocation(for item: ClipboardItem) -> VolumeLocation {
+        guard let attachment = item.fileAttachment, attachment.isReference,
+              let path = attachment.referencePath else { return .local }
+        return VolumeLocation.of(path: path)
+    }
+
+    nonisolated private static func resolveReference(bookmark: Data?, path: String?) -> [URL] {
+        let fileManager = FileManager.default
+        if let bookmark {
             var isStale = false
-            if let resolved = try? URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale),
+            // Never mount the volume (the share may be on a Mac that is
+            // asleep or gone) and never show a "connect to server" dialog.
+            if let resolved = try? URL(resolvingBookmarkData: bookmark, options: [.withoutMounting, .withoutUI], relativeTo: nil, bookmarkDataIsStale: &isStale),
                fileManager.fileExists(atPath: resolved.path) {
                 return [resolved]
             }
         }
 
-        if let path = attachment.referencePath, fileManager.fileExists(atPath: path) {
+        if let path, fileManager.fileExists(atPath: path) {
             return [URL(fileURLWithPath: path)]
         }
 

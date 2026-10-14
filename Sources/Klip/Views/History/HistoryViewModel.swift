@@ -300,6 +300,10 @@ final class HistoryViewModel: ObservableObject {
     }()
 
     @Published var chunkedText = ChunkedTextState()
+    /// Word and character counts of file-backed text clips, by clip id,
+    /// counted off the main thread by `reloadPreview`. Kept for the session:
+    /// one small value per clip, and a file-backed clip's text never changes.
+    @Published private(set) var fileTextStats: [UUID: TextStats] = [:]
     /// "Delete N clips?" — armed by `requestDelete` for any multi-selection in
     /// the history, whichever way it was asked for (⌘⌫, the row menu, the
     /// preview pane's button). A `PromptCard` like the trash confirmations,
@@ -1162,6 +1166,9 @@ final class HistoryViewModel: ObservableObject {
         tagInputText = ""
 
         guard let item = selectedItem, item.type == .text else { return }
+        if item.isFileBacked, fileTextStats[item.id] == nil {
+            countFileText(item)
+        }
         if item.isFileBacked || (item.textContent?.count ?? 0) > 5000 {
             await loadInitialChunk(for: item)
         } else {
@@ -1196,6 +1203,7 @@ final class HistoryViewModel: ObservableObject {
 
         var image: NSImage?
         var dimensions: PixelDimensions?
+        var textStats: TextStats?
         switch item.type {
         case .image:
             image = store.image(for: item)
@@ -1205,18 +1213,25 @@ final class HistoryViewModel: ObservableObject {
         case .file:
             // A Finder copy of a .png/.heic renders as a QuickLook thumbnail
             // and never produces an `NSImage` here, so its dimensions come
-            // straight off the file header.
-            if let url = store.fileURLs(for: item).first {
+            // straight off the file header. Not for a clip on a network
+            // share: this runs from a view body.
+            if let url = store.localFileURLs(for: item).first {
                 dimensions = PixelDimensions.read(contentsOf: url)
             }
         case .text:
-            break
+            // Inline text is already in memory and is at most a clip's worth
+            // of typing, so counting it here costs microseconds. File-backed
+            // text can be megabytes: `countFileText` does that one.
+            if !item.isFileBacked, !item.isFile {
+                textStats = TextStats.count(item.textContent ?? "")
+            }
         }
 
         let payload = PreviewPayload(
             image: image,
             dimensions: dimensions,
-            byteSize: store.itemSize(for: item)
+            byteSize: store.itemSize(for: item),
+            textStats: textStats
         )
         previewCache.setObject(payload, forKey: item.id as NSUUID)
         return payload
@@ -1228,6 +1243,26 @@ final class HistoryViewModel: ObservableObject {
     /// size really can change.
     func invalidatePreview(for id: UUID) {
         previewCache.removeObject(forKey: id as NSUUID)
+    }
+
+    /// The **Words** and **Characters** rows' values: nil for images and
+    /// files, and for file-backed text until `countFileText` has finished.
+    func textStats(for item: ClipboardItem) -> TextStats? {
+        guard item.type == .text, !item.isFile else { return nil }
+        if item.isFileBacked { return fileTextStats[item.id] }
+        return preview(for: item).textStats
+    }
+
+    /// Counts a file-backed text clip's whole text off the main thread. The
+    /// result is stored by id even if the selection has moved on meanwhile,
+    /// so coming back to the clip shows it straight away.
+    private func countFileText(_ item: ClipboardItem) {
+        Task {
+            let stats = await Task.detached(priority: .utility) { [store] in
+                store.fullText(for: item).map(TextStats.count)
+            }.value
+            if let stats { fileTextStats[item.id] = stats }
+        }
     }
 
     private func loadInitialChunk(for item: ClipboardItem) async {
