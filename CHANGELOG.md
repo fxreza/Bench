@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 (2026-11-05)
+
+### Fixed
+
+- Shortcuts work again on macOS 27.2. Since that update, Bench's global shortcuts (such as Option+Tab and New Terminal Window) were mostly ignored, or fired only after several presses. The check from 0.5.0 that drops shortcuts pressed while Bench is busy used macOS's time since the last key press, and since 27.2 that no longer counts a shortcut's own key press, so a fresh shortcut looked old and was dropped. Bench now checks how long its main thread has been busy instead, and drops a shortcut only when it waited more than 2 seconds behind a freeze. Works the same on every supported macOS version.
+
 ## 0.5.0 (2026-10-14)
 
 ### Added

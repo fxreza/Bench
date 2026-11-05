@@ -55,6 +55,7 @@ public final class HotkeyCenter: ObservableObject {
             let id = note.userInfo?["actionID"] as? String
             MainActor.assumeIsolated { self?.storeChanged(actionID: id) }
         }
+        observeMainRunLoopWakes()
     }
 
     // MARK: - Binding
@@ -187,9 +188,9 @@ public final class HotkeyCenter: ObservableObject {
 
     private func fire(carbonID: UInt32) {
         guard let id = idsByCarbonID[carbonID], let entry = entries[id] else { return }
-        let sinceKeyDown = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
-        guard !Self.isStale(secondsSinceKeyDown: sinceKeyDown) else {
-            Self.log.notice("dropped stale shortcut \(id, privacy: .public): key went down \(sinceKeyDown, format: .fixed(precision: 1))s ago")
+        let busyFor = ProcessInfo.processInfo.systemUptime - lastMainWake
+        guard !Self.isStale(mainThreadBusyFor: busyFor) else {
+            Self.log.notice("dropped stale shortcut \(id, privacy: .public): main thread busy for \(busyFor, format: .fixed(precision: 1))s")
             return
         }
         entry.handler()
@@ -198,14 +199,38 @@ public final class HotkeyCenter: ObservableObject {
     /// A shortcut is handled on the main thread, so one pressed while the
     /// main thread is blocked waits in the queue and fires late, together
     /// with every other one pressed meanwhile (2026-10-07: a two-minute
-    /// freeze ended with a dozen Finder windows at once). Carbon stamps the
-    /// event when it is handled, not when the key went down, so the age
-    /// comes from the window server's last key-down instead; a fresh press
-    /// is milliseconds old. Needs no permission.
-    static let staleShortcutAge: TimeInterval = 1.0
+    /// freeze ended with a dozen Finder windows at once).
+    ///
+    /// The test is how long the main run loop has gone without waking from
+    /// idle: a fresh press wakes it, so it is handled milliseconds after the
+    /// wake; one queued behind a freeze is handled after the whole freeze.
+    /// Not the window server's "seconds since last key-down": since macOS
+    /// 27.2 that skips the key-down of a global hot key, so it measured the
+    /// time since the last ordinary keystroke and dropped fresh presses
+    /// (2026-11-05). Carbon's own event time is when the event is handled,
+    /// so it cannot tell either. Needs no permission, and App Nap does not
+    /// affect it (an input event wakes a napping app at once).
+    static let staleShortcutAge: TimeInterval = 2.0
 
-    static func isStale(secondsSinceKeyDown: TimeInterval) -> Bool {
-        secondsSinceKeyDown > staleShortcutAge
+    static func isStale(mainThreadBusyFor seconds: TimeInterval) -> Bool {
+        seconds > staleShortcutAge
+    }
+
+    /// `systemUptime` of the main run loop's last wake from idle, in every
+    /// common mode (default, menu tracking, modal panels).
+    private var lastMainWake = ProcessInfo.processInfo.systemUptime
+    private var wakeObserver: CFRunLoopObserver?
+
+    private func observeMainRunLoopWakes() {
+        let observer = CFRunLoopObserverCreateWithHandler(
+            kCFAllocatorDefault, CFRunLoopActivity.afterWaiting.rawValue, true, 0
+        ) { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                self?.lastMainWake = ProcessInfo.processInfo.systemUptime
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        wakeObserver = observer
     }
 
     private static let log = Logger(subsystem: "com.fxreza.bench", category: "hotkeys")
