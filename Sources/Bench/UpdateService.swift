@@ -199,6 +199,10 @@ final class UpdateService {
 
     // MARK: - Post-update
 
+    /// True on the first launch after the updater installed this build,
+    /// until `checkIfJustUpdated` runs.
+    var isPostUpdateLaunch: Bool { defaults.bool(forKey: Key.justUpdated) }
+
     func checkIfJustUpdated() {
         guard defaults.bool(forKey: Key.justUpdated) else { return }
         defaults.removeObject(forKey: Key.justUpdated)

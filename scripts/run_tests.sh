@@ -13,15 +13,20 @@ if [[ ${#MODULES[@]} -eq 0 ]]; then
     MODULES=(BenchCore Shot Klip Lingo Snap Piko Tap Clean)
 fi
 
-TARGETS=()
-# --product (not --target) so the runner executable is relinked after an edit.
-for m in "${MODULES[@]}"; do TARGETS+=(--product "${m}Tests"); done
-
-swift build --scratch-path "$SCRATCH" "${TARGETS[@]}" 2>&1 | grep -E "error:|warning: unused|Build complete|Compiling" | grep -v "^\[" || true
-
 STATUS=0
 for m in "${MODULES[@]}"; do
     echo "== ${m}Tests"
+    # One product per `swift build`: given several --product flags, SwiftPM
+    # builds only the last one, and the others would run a stale binary.
+    # --product (not --target) so the runner executable is relinked after an
+    # edit. A failed build fails the module instead of running the old runner.
+    if ! log=$(swift build --scratch-path "$SCRATCH" --product "${m}Tests" 2>&1); then
+        echo "$log" | grep -E "error:" || echo "$log" | tail -20
+        echo "FAIL ${m}Tests did not build"
+        STATUS=1
+        continue
+    fi
+    echo "$log" | grep -E "warning: unused" || true
     if ! "$SCRATCH/debug/${m}Tests"; then STATUS=1; fi
 done
 exit $STATUS

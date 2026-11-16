@@ -87,8 +87,9 @@ public final class SettingsSync: ObservableObject {
         "piko.importedFromPiko",
     ]
 
-    /// Prefixes that never travel: the sync's own switch and identity.
-    public static let excludedPrefixes = ["bench.settingsSync."]
+    /// Prefixes that never travel: the sync's own switch and identity, and
+    /// which build each permission was last granted to on this Mac.
+    public static let excludedPrefixes = ["bench.settingsSync.", "bench.permissions."]
 
     /// Whether a defaults key takes part in sync.
     public static func isSynced(_ key: String) -> Bool {

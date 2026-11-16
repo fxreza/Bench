@@ -54,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         warnAboutStandaloneAppsIfNeeded()
         runFirstLaunchIfNeeded()
+        repairStaleGrants()
 
         if settings.autoCheckUpdates {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
@@ -72,6 +73,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // An update relaunch quits here too, so a grant made this session is
+        // on record before the new build checks for stale ones.
+        StaleGrantRepair.recordGrants()
         FeatureRegistry.shared.stopAll()
         // Any edit still inside the push debounce goes out now, bounded so
         // quitting never waits on iCloud.
@@ -188,6 +192,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if missing || !permissions.accessibilityTrusted || !permissions.screenRecordingGranted {
             SettingsWindowController.show(destination: .permissions)
         }
+    }
+
+    /// After an update macOS can keep the previous build's grant, which no
+    /// longer matches this one (see `StaleGrantRepair`). Only the affected
+    /// permissions are reset and asked for again; the Permissions pane shows
+    /// them while the user switches them back on.
+    private func repairStaleGrants() {
+        let stale = StaleGrantRepair.repairAtLaunch(justUpdated: UpdateService.shared.isPostUpdateLaunch)
+        guard !stale.isEmpty else { return }
+        SettingsWindowController.show(destination: .permissions)
     }
 
     // MARK: - Standalone apps

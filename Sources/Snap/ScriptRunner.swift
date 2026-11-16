@@ -1,4 +1,5 @@
 import AppKit
+import BenchCore
 
 /// Runs the two user-editable AppleScripts.
 ///
@@ -9,7 +10,9 @@ import AppKit
 ///
 /// The first run against each target app raises the system Automation
 /// prompt; that is the `.automation` permission Snap declares. A refusal
-/// arrives as error -1743 and is reported like any other script error.
+/// arrives as error -1743 and is reported like any other script error,
+/// unless it is a grant left over from an earlier build: then the grant is
+/// reset and the script runs once more, so macOS asks again.
 enum ScriptRunner {
     /// Runs `source`, calling `completion` on the main actor with a
     /// human-readable error message, or nil on success.
@@ -30,7 +33,15 @@ enum ScriptRunner {
         }
         var errorInfo: NSDictionary?
         script.executeAndReturnError(&errorInfo)
-        guard let errorInfo else { return nil }
+        if errorInfo?[NSAppleScript.errorNumber] as? Int == -1743,
+           StaleGrantRepair.resetAutomationIfStale() {
+            errorInfo = nil
+            script.executeAndReturnError(&errorInfo)
+        }
+        guard let errorInfo else {
+            StaleGrantRepair.noteAutomationWorked()
+            return nil
+        }
         let message = errorInfo[NSAppleScript.errorMessage] as? String
         let number = errorInfo[NSAppleScript.errorNumber] as? Int
         switch (message, number) {

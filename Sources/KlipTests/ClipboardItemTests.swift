@@ -13,7 +13,7 @@ enum ClipboardItemTests {
         ("jsonRoundTrip_imageItem_preservesAllFields", testJSONRoundTripImage),
         ("decode_missingOptionalFields_usesDefaults", testDecodeMissingOptionalFields),
         ("previewText_capsAt200Chars", testPreviewTextCap),
-        ("isEditable_falseAbove5000Chars", testIsEditableLimit),
+        ("isEditable_falseAboveLimit", testIsEditableLimit),
         ("isProtected_coversEveryProtectionFlag", testIsProtected),
         ("previewText_usesFileAttachmentName", testPreviewTextFileAttachment),
         ("jsonRoundTrip_preservesNewV2Fields", testJSONRoundTripNewFields),
@@ -158,11 +158,17 @@ enum ClipboardItemTests {
     }
 
     static func testIsEditableLimit() throws {
-        let overLimit = ClipboardItem.text(String(repeating: "x", count: 5001))
-        try expect(!overLimit.isEditable, "text item over 5000 chars should not be editable")
+        let limit = ClipboardItem.maxEditableLength
+        let overLimit = ClipboardItem.text(String(repeating: "x", count: limit + 1))
+        try expect(!overLimit.isEditable, "text item over the limit should not be editable")
+        try expect(overLimit.editUnavailableReason?.hasPrefix("Too long to edit") == true,
+                   "a long text clip is off for length, not for not being text")
 
-        let atLimit = ClipboardItem.text(String(repeating: "x", count: 5000))
-        try expect(atLimit.isEditable, "text item at exactly 5000 chars should be editable")
+        let atLimit = ClipboardItem.text(String(repeating: "x", count: limit))
+        try expect(atLimit.isEditable, "text item at exactly the limit should be editable")
+
+        let midLength = ClipboardItem.text(String(repeating: "x", count: 5525))
+        try expect(midLength.isEditable, "text past the old 5000 cap is editable now")
 
         let shortItem = ClipboardItem.text("short")
         try expect(shortItem.isEditable, "short text item should be editable")

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.2 (2026-11-16)
+
+### Changed
+
+- Klip: text clips up to 50,000 characters can now be edited (the limit was 5,000). Longer text, which Klip keeps in a separate file, still opens read-only.
+
+### Fixed
+
+- Klip: on a text clip too long to edit, the greyed-out Edit button now says "Too long to edit - the limit is 50,000 characters" instead of "Only text clips can be edited", which made it look as if Klip did not see the clip as text.
+- After an update, a permission that macOS still showed as on but no longer honoured (Accessibility, Screen Recording, or Automation for Snap's scripts) is reset by Bench and asked for again, so switching it back on is enough. Before, the old entry had to be removed by hand and Bench added again. Bench opens Settings at Permissions when this happens. A permission turned off on purpose is never reset.
+
 ## 0.5.1 (2026-11-05)
 
 ### Fixed

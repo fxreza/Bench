@@ -10,6 +10,7 @@ let suites: [TestSuite] = [
     ("RecorderOutcomeTests", RecorderOutcomeTests.tests),
     ("CloudDriveTests", CloudDriveTests.tests),
     ("SettingsSyncTests", SettingsSyncTests.tests),
+    ("StaleGrantRepairTests", StaleGrantRepairTests.tests),
 ]
 
 exit(MainActor.assumeIsolated { runSuites(suites) })

@@ -405,9 +405,26 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         isPinned || isBookmarked || !tags.isEmpty || isLocked || folderID != nil
     }
 
+    /// Longest text the inline editor opens. Matches the watcher's 50 KB
+    /// inline-storage limit: anything bigger is file-backed, its full text
+    /// is not in memory, and it cannot be edited anyway.
+    static let maxEditableLength = 50_000
+
     /// Whether this item is editable inline
     var isEditable: Bool {
-        type == .text && !isFileBacked && !isFile && (textContent?.count ?? 0) <= 5000
+        editUnavailableReason == nil
+    }
+
+    /// Why the Edit action is off for this clip, or `nil` when it is on.
+    /// The tooltip on the disabled Edit icon shows this, so it must name the
+    /// real cause: a long text clip is still text.
+    var editUnavailableReason: String? {
+        guard type == .text, !isFile else { return "Only text clips can be edited" }
+        let length = textContent?.count ?? 0
+        guard !isFileBacked, length <= Self.maxEditableLength else {
+            return "Too long to edit - the limit is \(Self.maxEditableLength.formatted()) characters"
+        }
+        return nil
     }
 
     /// Longest name `ClipboardStore.setTitle` will store. A row shows one

@@ -234,11 +234,10 @@ struct PreviewPane: View {
             iconButton(
                 "square.and.pencil",
                 tint: viewModel.isEditing ? Theme.accent : Theme.iconIdle,
-                help: !item.isEditable
-                    ? "Only text clips can be edited"
-                    : viewModel.isEditing
+                help: item.editUnavailableReason
+                    ?? (viewModel.isEditing
                         ? "Stop editing (auto-saved) (\(shortcuts.displayString(for: .edit)) or \(shortcuts.displayString(for: .escape)))"
-                        : "Edit item (\(shortcuts.displayString(for: .edit)))",
+                        : "Edit item (\(shortcuts.displayString(for: .edit)))"),
                 enabled: item.isEditable
             ) { viewModel.toggleEditMode() }
 
@@ -413,9 +412,10 @@ struct PreviewPane: View {
     private func textBody(_ item: ClipboardItem) -> some View {
         if let swatch = item.swatchColor, !viewModel.isEditing {
             colorBody(item, swatch: swatch)
-        } else if item.isFileBacked || (item.textContent?.count ?? 0) > 5000 {
-            chunkedText(item)
-        } else if viewModel.isEditing {
+        } else if viewModel.isEditing && item.isEditable {
+            // Ahead of the chunked viewer: editable text runs to
+            // `ClipboardItem.maxEditableLength`, past the 5,000 characters
+            // where the read-only preview switches to chunks.
             VStack(alignment: .leading, spacing: 6) {
                 editTitleField
                     .padding(.bottom, 4)
@@ -437,6 +437,8 @@ struct PreviewPane: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        } else if item.isFileBacked || (item.textContent?.count ?? 0) > 5000 {
+            chunkedText(item)
         } else {
             Text(item.textContent ?? "")
                 .font(.klip(item.displayKind == .code ? .previewMono : .preview))
